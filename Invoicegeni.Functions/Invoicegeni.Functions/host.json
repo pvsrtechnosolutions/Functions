@@ -1,0 +1,17 @@
+{
+  "version": "2.0",
+  "extensions": {
+    "blobs": {
+      "maxDegreeOfParallelism": 8,
+      "batchSize": 32
+    }
+  },
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true
+      },
+      "enableLiveMetricsFilters": true
+    }
+  }
+}
