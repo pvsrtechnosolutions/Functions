@@ -223,22 +223,45 @@ public class ExtractInvoiceData
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        // Normalize line breaks
-        string normalized = Regex.Replace(text, @"-\s*\r?\n\s*", "");
-        normalized = Regex.Replace(normalized, @"\r?\n", " ");
-        normalized = Regex.Replace(normalized, @"\s+", " ");
 
-        // Match either "Bill to:" or "Buyer:"
-        var match = Regex.Match(
-            normalized,
-            @"(?:Bill\s*to|Buyer)\s*[:\-]\s*([A-Za-z\s]+)\s+(.+?)(?=\s+Email|Tel|www|GSTIN|ITEMS)",
-            RegexOptions.IgnoreCase
-        );
-
-        if (match.Success)
+        // Step 1: Capture block starting at "Buyer:" and ending at "Tel" or similar
+        
+        var lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        bool inBuyerBlock = false;
+        var addressLines = new List<string>();
+        
+        foreach (var rawLine in lines)
         {
-            invoice.CustomerName = match.Groups[1].Value.Trim();
-            invoice.CustomerAddress = match.Groups[2].Value.Trim();
+            var line = rawLine.Trim();
+        
+            if (line.StartsWith("Buyer", StringComparison.OrdinalIgnoreCase) || line.StartsWith("Bill to", StringComparison.OrdinalIgnoreCase))
+            {
+                inBuyerBlock = true;
+                var parts = line.Split(new[] { ':' }, 2);
+                if (parts.Length == 2)
+                    invoice.CustomerName = parts[1].Trim();
+                continue;
+            }
+        
+            if (inBuyerBlock && Regex.IsMatch(line, @"^(Email|Tel|Phone|GSTIN|www|ITEMS|Note|SUB_TOTAL|TOTAL|QUANTITY|PRICE|Bank|Branch|Site)", RegexOptions.IgnoreCase))
+            {
+                break;
+            }
+        
+            if (inBuyerBlock)
+            {
+                addressLines.Add(line);
+            }
+        }
+        
+        // Pick only the last line in the address block (assumed to be the detailed address)
+        if (addressLines.Count > 0)
+        {
+            invoice.CustomerAddress = addressLines[^1].Trim().TrimEnd('.') + ","; // Ensure comma for formatting
+        }
+        if (addressLines.Count > 1)
+        {
+            invoice.CustomerAddress = addressLines[^2].Trim() + ", " + addressLines[^1].Trim();
         }
     }
 
