@@ -209,7 +209,7 @@ public class ExtractInvoiceData
         // Extract phone only if it appears after "Bill to"
         var match = Regex.Match(
             text,
-            @"Bill\s*to:.*?(Tel|Phone)[:\s]*([+\d\-\(\)\s]+)",
+             @"(?:Bill\s*to|Buyer).*?(Tel|Phone)[:\s]*([+\d\-\(\)\s]+)",
             RegexOptions.IgnoreCase | RegexOptions.Singleline
         );
 
