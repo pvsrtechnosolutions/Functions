@@ -47,7 +47,7 @@ public class ExtractInvoiceData
             // --- Field Mapping ---
             MapField(doc, "VendorName", v => invoice.VendorName = v);
             MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
-            MapField(doc, "CustomerName", val => invoice.CustomerName = val);          
+            MapField(doc, "CustomerName", val => invoice.CustomerName = val);
             MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
             MapDateField(doc, "DueDate", val => invoice.DueDate = val);
             MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
@@ -56,7 +56,7 @@ public class ExtractInvoiceData
             MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
             MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
             
-
+            
             ExtractVendorGSTIN(result.Content, invoice);
             ExtractCustomerPhone(result.Content, invoice);
             ExtractCustomerAddress(result.Content, invoice);
@@ -69,41 +69,9 @@ public class ExtractInvoiceData
             ExtractSubtotalDetails(result.Content, invoice);
             ExtractTotalInWords(result.Content, invoice);
             ExtractNote(result.Content, invoice);
-
+            
             // -------- Extract Line Items --------
-            if (doc.Fields.TryGetValue("Items", out var itemsField) && itemsField.FieldType == DocumentFieldType.List)
-            {
-                foreach (var item in itemsField.ValueList)
-                {
-                    var obj = item.ValueDictionary;
-
-                    string rawPrice = obj.TryGetValue("Amount", out var priceField) ? priceField.Content : "";
-
-                    string currencySymbol = null;
-                    decimal priceValue = 0;
-
-                    if (!string.IsNullOrEmpty(rawPrice))
-                    {
-                        var currencyMatch = Regex.Match(rawPrice, @"([\$\€\£])");
-                        if (currencyMatch.Success)
-                            currencySymbol = currencyMatch.Groups[1].Value;
-
-                        var numMatch = Regex.Match(rawPrice, @"[\d\.,]+");
-                        if (numMatch.Success)
-                            decimal.TryParse(numMatch.Value.Replace(",", ""), out priceValue);
-                    }
-
-                    var li = new InvoiceLineItem
-                    {
-                        ItemDescription = obj.TryGetValue("Description", out var desc) ? desc.Content : null,
-                        Quantity = obj.TryGetValue("Quantity", out var qtyField) ? Convert.ToDecimal(qtyField.Content) : 0,
-                        UnitPrice = priceValue,
-                        UnitPriceCurrency = currencySymbol
-                    };
-
-                    invoice.LineItems.Add(li);
-                }
-            }
+            ExtractLineItems(doc, invoice);
 
             // --- Save to Database ---
             await SaveInvoiceToDatabase(invoice, _logger);
@@ -116,6 +84,61 @@ public class ExtractInvoiceData
         }
     }
 
+    private static void ExtractLineItems(AnalyzedDocument doc, InvoiceData invoice)
+    {
+        if (doc.Fields.TryGetValue("Items", out var itemsField) && itemsField.FieldType == DocumentFieldType.List)
+        {
+            foreach (var item in itemsField.ValueList)
+            {
+                var obj = item.ValueDictionary;
+    
+                //string rawPrice = obj.TryGetValue("Amount", out var priceField) ? priceField.Content : "";
+                string rawPrice = "";
+    
+                var fieldMap = obj
+                    .ToDictionary(kvp => kvp.Key.ToLowerInvariant(), kvp => kvp.Value);
+                if (fieldMap.TryGetValue("price", out var priceField) && !string.IsNullOrWhiteSpace(priceField.Content))
+                {
+                    rawPrice = priceField.Content;
+                }
+                if (fieldMap.TryGetValue("unit price", out var unitPriceEField) && !string.IsNullOrWhiteSpace(unitPriceEField.Content))
+                {
+                    rawPrice = unitPriceEField.Content;
+                }
+                if (fieldMap.TryGetValue("unitprice", out var unitPriceField) && !string.IsNullOrWhiteSpace(unitPriceField.Content))
+                {
+                    rawPrice = unitPriceField.Content;
+                }
+                else if (fieldMap.TryGetValue("amount", out var amountField) && !string.IsNullOrWhiteSpace(amountField.Content))
+                {
+                    rawPrice = amountField.Content;
+                }
+                string currencySymbol = null;
+                decimal priceValue = 0;
+    
+                if (!string.IsNullOrEmpty(rawPrice))
+                {
+                    var currencyMatch = Regex.Match(rawPrice, @"([\$\€\£])");
+                    if (currencyMatch.Success)
+                        currencySymbol = currencyMatch.Groups[1].Value;
+    
+                    var numMatch = Regex.Match(rawPrice, @"[\d\.,]+");
+                    if (numMatch.Success)
+                        decimal.TryParse(numMatch.Value.Replace(",", ""), out priceValue);
+                }
+    
+                var li = new InvoiceLineItem
+                {
+                    ItemDescription = obj.TryGetValue("Description", out var desc) ? desc.Content : null,
+                    Quantity = obj.TryGetValue("Quantity", out var qtyField) ? Convert.ToDecimal(qtyField.Content) : 0,
+                    UnitPrice = priceValue,
+                    UnitPriceCurrency = currencySymbol
+                };
+    
+                invoice.LineItems.Add(li);
+            }
+        }
+    }    
     // -------- Save to DB --------
     private static async Task SaveInvoiceToDatabase(InvoiceData invoice, ILogger log)
     {
@@ -205,65 +228,97 @@ public class ExtractInvoiceData
     private static void ExtractCustomerPhone(string text, InvoiceData invoice)
     {
         if (string.IsNullOrEmpty(text)) return;
-
+    
         // Extract phone only if it appears after "Bill to"
         var match = Regex.Match(
             text,
-             @"(?:Bill\s*to|Buyer).*?(Tel|Phone)[:\s]*([+\d\-\(\)\s]+)",
+             @"(?:Bill\s*to|Bill_to|Buyer).*?(Tel|Phone)[:\s]*([+\d\-\(\)\s]+)",
             RegexOptions.IgnoreCase | RegexOptions.Singleline
         );
-
+    
         if (match.Success)
         {
             invoice.CustomerPhone = match.Groups[2].Value.Trim();
         }
     }
 
-    private static void ExtractCustomerAddress(string text, InvoiceData invoice)
-    {
-        if (string.IsNullOrEmpty(text)) return;
-
-
-        // Step 1: Capture block starting at "Buyer:" and ending at "Tel" or similar
-        
-        var lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-        bool inBuyerBlock = false;
-        var addressLines = new List<string>();
-        
-        foreach (var rawLine in lines)
-        {
-            var line = rawLine.Trim();
-        
-            if (line.StartsWith("Buyer", StringComparison.OrdinalIgnoreCase) || line.StartsWith("Bill to", StringComparison.OrdinalIgnoreCase))
-            {
-                inBuyerBlock = true;
-                var parts = line.Split(new[] { ':' }, 2);
-                if (parts.Length == 2)
-                    invoice.CustomerName = parts[1].Trim();
-                continue;
-            }
-        
-            if (inBuyerBlock && Regex.IsMatch(line, @"^(Email|Tel|Phone|GSTIN|www|ITEMS|Note|SUB_TOTAL|TOTAL|QUANTITY|PRICE|Bank|Branch|Site)", RegexOptions.IgnoreCase))
-            {
-                break;
-            }
-        
-            if (inBuyerBlock)
-            {
-                addressLines.Add(line);
-            }
-        }
-        
-        // Pick only the last line in the address block (assumed to be the detailed address)
-        if (addressLines.Count > 0)
-        {
-            invoice.CustomerAddress = addressLines[^1].Trim().TrimEnd('.') + ","; // Ensure comma for formatting
-        }
-        if (addressLines.Count > 1)
-        {
-            invoice.CustomerAddress = addressLines[^2].Trim() + ", " + addressLines[^1].Trim();
-        }
-    }
+     private static void ExtractCustomerAddress(string text, InvoiceData invoice)
+     {
+         if (string.IsNullOrWhiteSpace(text)) return;
+    
+         var lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+         var addressLines = new List<string>();
+         bool inAddressBlock = false;
+         bool expectCustomerNameNext = false;
+    
+         foreach (var rawLine in lines)
+         {
+             var line = rawLine.Trim();
+    
+             // Start block on Buyer / Bill To
+             if (line.StartsWith("Buyer", StringComparison.OrdinalIgnoreCase) ||
+                 line.StartsWith("Bill to", StringComparison.OrdinalIgnoreCase) ||
+                 line.StartsWith("Bill_to", StringComparison.OrdinalIgnoreCase))
+             {
+                 inAddressBlock = true;
+                 addressLines.Clear();
+    
+                 // Try extract name
+                 var parts = line.Split(new[] { ':' }, 2);
+                 if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
+                 {
+                     invoice.CustomerName = parts[1].Trim();
+                 }
+                 else
+                 {
+                     expectCustomerNameNext = true;
+                 }
+    
+                 continue;
+             }
+    
+             if (inAddressBlock)
+             {
+                 if (expectCustomerNameNext)
+                 {
+                     invoice.CustomerName = line;
+                     expectCustomerNameNext = false;
+                     continue;
+                 }
+    
+                 // Break if known section *and* doesn't contain address-like info
+                 if (Regex.IsMatch(line, @"^(Email|Tel|Phone|GSTIN|Qty|QUANTITY|ITEMS|Note|SUB_TOTAL|TOTAL|Description|Date|Bank|Branch|Site|Thank you)", RegexOptions.IgnoreCase)
+                     && !Regex.IsMatch(line, @"\d{5}(\s*US)?$", RegexOptions.IgnoreCase)) // If it ends with ZIP or ZIP US, allow it
+                 {
+                     break;
+                 }
+    
+                 addressLines.Add(line);
+             }
+    
+         }
+    
+         // Smart join: keep lines that look like address even if they came with "Due Date"
+         if (addressLines.Count > 0)
+         {
+             // Try to extract just the address-like part from last line if needed
+             string lastLine = addressLines[^1];
+    
+             // If it has "Due Date :", extract only address portion
+             if (lastLine.Contains("Due Date", StringComparison.OrdinalIgnoreCase))
+             {
+                 var match = Regex.Match(lastLine, @"(\d{2}-[A-Za-z]{3}-\d{4},\s*.+)$");
+                 if (match.Success)
+                     addressLines[^1] = match.Groups[1].Value.Trim();
+             }
+    
+             invoice.CustomerAddress = Regex.Replace(
+            string.Join(", ", addressLines).TrimEnd(',') + ",",
+            @"\b(Due\s*Date|Date)\s*:\s*[^,]+,\s*",
+            string.Empty,
+            RegexOptions.IgnoreCase);
+         }
+     }
 
     private static void ExtractTotalInWords(string text, InvoiceData invoice)
     {
@@ -296,14 +351,14 @@ public class ExtractInvoiceData
     private static void ExtractVendorGSTIN(string text, InvoiceData invoice)
     {
         if (string.IsNullOrEmpty(text)) return;
-
+    
         // Match GSTIN but stop if "Site" or newline comes after
         var match = Regex.Match(
-            text,
-            @"GSTIN[:\s]+([A-Z0-9\s]+)(?=\s+Site|$)",
-            RegexOptions.IgnoreCase
+         text,
+         @"GSTIN[:\s]+([A-Z0-9]{15})",
+         RegexOptions.IgnoreCase
         );
-
+    
         if (match.Success)
         {
             invoice.VendorGSTIN = match.Groups[1].Value.Trim();
@@ -439,28 +494,42 @@ public class ExtractInvoiceData
 
     private static void ExtractEmailsAndWebsites(string fullText, InvoiceData invoice)
     {
-        if (string.IsNullOrEmpty(fullText))
+        if (string.IsNullOrWhiteSpace(fullText))
             return;
-
-        // Find all emails
-        var emailMatches = Regex.Matches(fullText, @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}");
-        if (emailMatches.Count > 0)
+    
+        // Step 1: Extract the customer (Bill to) section
+        var customerMatch = Regex.Match(
+            fullText,
+            @"(?:Bill\s*to|Bill_to|Buyer)[:\s]*(.*?)(?=(GSTIN|Qty|ITEMS|Note:|Description|QUANTITY|PRICE|TOTAL|SUB_TOTAL|Thank you))",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+    
+        string customerSection = customerMatch.Success ? customerMatch.Groups[0].Value : "";
+    
+        // Step 2: Remove the customer section from the full text to get vendor area
+        string vendorSection = customerMatch.Success ? fullText.Replace(customerSection, "", StringComparison.OrdinalIgnoreCase) : fullText;
+    
+        // Step 3: Extract all email addresses
+        var emailRegex = new Regex(@"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.IgnoreCase);
+        foreach (Match match in emailRegex.Matches(fullText))
         {
-            // Assume first email belongs to vendor (most top)
-            invoice.VendorEmail = emailMatches[0].Value;
-
-            if (emailMatches.Count > 1)
-                invoice.CustomerEmail = emailMatches[1].Value;
+            string email = match.Value;
+    
+            if ((!string.IsNullOrEmpty(customerSection) && customerSection.Contains(email)) && string.IsNullOrEmpty(invoice.CustomerEmail))
+                invoice.CustomerEmail = email;
+            else if ((!string.IsNullOrEmpty(vendorSection) && vendorSection.Contains(email)) || email == invoice.CustomerEmail)
+                invoice.VendorEmail = email;
         }
-
-        // Find all websites
-        var websiteMatches = Regex.Matches(fullText, @"(http|https)://[^\s]+|www\.[^\s]+", RegexOptions.IgnoreCase);
-        if (websiteMatches.Count > 0)
+    
+        // Step 4: Extract all website URLs
+        var websiteRegex = new Regex(@"(http|https)://[^\s]+|www\.[^\s]+", RegexOptions.IgnoreCase);
+        foreach (Match match in websiteRegex.Matches(fullText))
         {
-            invoice.VendorWebsite = websiteMatches[0].Value;
-
-            if (websiteMatches.Count > 1)
-                invoice.CustomerWebsite = websiteMatches[1].Value;
+            string website = match.Value;
+    
+            if (!string.IsNullOrEmpty(customerSection) && customerSection.Contains(website))
+                invoice.CustomerWebsite = website;
+            else if (!string.IsNullOrEmpty(vendorSection) && vendorSection.Contains(website))
+                invoice.VendorWebsite = website;
         }
     }
     private static string CleanPO(string value)
