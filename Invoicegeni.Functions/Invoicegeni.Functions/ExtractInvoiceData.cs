@@ -25,10 +25,12 @@ public class ExtractInvoiceData
     }
 
     [Function(nameof(ExtractInvoiceData))]
-    public async Task Run([BlobTrigger("invoice/{name}", Connection = "BlobConnectionString")] Stream stream, string name)
+    public async Task Run([BlobTrigger("invoice/{name}", Connection = "BlobConnectionString")] Stream stream, string name, ILogger log)
     {
         try
         {
+            log.LogInformation($"Blob Triggered: {name}");
+
             AzureKeyCredential credential = new AzureKeyCredential(Environment.GetEnvironmentVariable("DICApiKey"));
             var client = new DocumentIntelligenceClient(new Uri(Environment.GetEnvironmentVariable("DICendpoint")), credential);
             BinaryData content = BinaryData.FromStream(stream);
@@ -76,11 +78,11 @@ public class ExtractInvoiceData
             // --- Save to Database ---
             await SaveInvoiceToDatabase(invoice, _logger);
 
-            _logger.LogInformation($"Invoice {name} processed successfully.");
+            log.LogInformation($"Invoice {name} processed successfully.");
         }
         catch (Exception ex)
         {
-            _logger.LogInformation("C# Blob Trigger filed exception : ", ex.Message.ToString());
+            log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
         }
     }
 
