@@ -86,59 +86,118 @@ public class ExtractInvoiceData
 
     private static void ExtractLineItems(AnalyzedDocument doc, InvoiceData invoice)
     {
+        string vendorName = invoice.VendorName?.Trim().ToLowerInvariant() ?? string.Empty;
+    
         if (doc.Fields.TryGetValue("Items", out var itemsField) && itemsField.FieldType == DocumentFieldType.List)
         {
             foreach (var item in itemsField.ValueList)
             {
                 var obj = item.ValueDictionary;
+                var fieldMap = obj.ToDictionary(kvp => kvp.Key.Trim().ToLowerInvariant(), kvp => kvp.Value);
     
-                //string rawPrice = obj.TryGetValue("Amount", out var priceField) ? priceField.Content : "";
-                string rawPrice = "";
+                string description = TryGetFieldContent(fieldMap, "description", "item", "item description");
+                string itemId = TryGetFieldContent(fieldMap, "id", "item id", "productcode", "material number", "sku", "item number");
+                decimal quantity = TryParseDecimal(TryGetFieldContent(fieldMap, "quantity", "qty"));
     
-                var fieldMap = obj
-                    .ToDictionary(kvp => kvp.Key.ToLowerInvariant(), kvp => kvp.Value);
-                if (fieldMap.TryGetValue("price", out var priceField) && !string.IsNullOrWhiteSpace(priceField.Content))
+                string rawUnitPrice = null;
+                string rawAmount = null;
+    
+                // Vendor-specific field logic
+                if (vendorName.Contains("cq")) // Logic for 1.jpg (Price = UnitPrice)
                 {
-                    rawPrice = priceField.Content;
+                    rawUnitPrice = TryGetFieldContent(fieldMap, "price", "amount");                    
                 }
-                if (fieldMap.TryGetValue("unit price", out var unitPriceEField) && !string.IsNullOrWhiteSpace(unitPriceEField.Content))
+                else if (vendorName.StartsWith("kirk")) // Logic for 2.jpg (explicit UnitPrice + Amount)
                 {
-                    rawPrice = unitPriceEField.Content;
+                    rawUnitPrice = TryGetFieldContent(fieldMap, "unitprice", "unit price");
+                    rawAmount = TryGetFieldContent(fieldMap, "amount");
                 }
-                if (fieldMap.TryGetValue("unitprice", out var unitPriceField) && !string.IsNullOrWhiteSpace(unitPriceField.Content))
+                else if (vendorName.StartsWith("group")) // Logic for 3.jpg
                 {
-                    rawPrice = unitPriceField.Content;
+                    rawUnitPrice = TryGetFieldContent(fieldMap, "unit price", "unitprice");
+                    rawAmount = TryGetFieldContent(fieldMap, "amount");
                 }
-                else if (fieldMap.TryGetValue("amount", out var amountField) && !string.IsNullOrWhiteSpace(amountField.Content))
+                else if (vendorName.StartsWith("barnes")) // Logic for 4.jpg
                 {
-                    rawPrice = amountField.Content;
+                    rawUnitPrice = TryGetFieldContent(fieldMap, "amount");
+                    //rawAmount = TryGetFieldContent(fieldMap, "total");
                 }
+                else if (vendorName.StartsWith("huff")) // 5.jpg
+                {
+                    rawUnitPrice = TryGetFieldContent(fieldMap,"amount");                   
+                }
+                else // Fallback logic
+                {
+                    rawUnitPrice = TryGetFieldContent(fieldMap, "unitprice", "unit price", "price", "amount");
+                    rawAmount = TryGetFieldContent(fieldMap, "amount");
+                }
+    
                 string currencySymbol = null;
-                decimal priceValue = 0;
+                decimal unitPrice = 0;
+                decimal amount = 0;
     
-                if (!string.IsNullOrEmpty(rawPrice))
+                // Extract unit price
+                if (!string.IsNullOrWhiteSpace(rawUnitPrice))
+                    ExtractCurrencyAndValue(rawUnitPrice, out currencySymbol, out unitPrice);
+    
+                // Extract total amount
+                if (!string.IsNullOrWhiteSpace(rawAmount))
+                    ExtractCurrencyAndValue(rawAmount, out var tempCurrency, out amount);
+    
+                // Fallback to computed amount if missing
+                if (amount == 0 && unitPrice > 0 && quantity > 0)
+                    amount = unitPrice * quantity;
+    
+                var lineItem = new InvoiceLineItem
                 {
-                    var currencyMatch = Regex.Match(rawPrice, @"([\$\€\£])");
-                    if (currencyMatch.Success)
-                        currencySymbol = currencyMatch.Groups[1].Value;
-    
-                    var numMatch = Regex.Match(rawPrice, @"[\d\.,]+");
-                    if (numMatch.Success)
-                        decimal.TryParse(numMatch.Value.Replace(",", ""), out priceValue);
-                }
-    
-                var li = new InvoiceLineItem
-                {
-                    ItemDescription = obj.TryGetValue("Description", out var desc) ? desc.Content : null,
-                    Quantity = obj.TryGetValue("Quantity", out var qtyField) ? Convert.ToDecimal(qtyField.Content) : 0,
-                    UnitPrice = priceValue,
+                    ItemDescription = description,
+                    ItemId = itemId,
+                    Quantity = quantity,
+                    UnitPrice = unitPrice,
+                    Amount = amount,
                     UnitPriceCurrency = currencySymbol
                 };
     
-                invoice.LineItems.Add(li);
+                invoice.LineItems.Add(lineItem);
             }
         }
-    }    
+    }
+    
+    // 🧰 Helper methods
+    private static string TryGetFieldContent(Dictionary<string, DocumentField> fields, params string[] possibleKeys)
+    {
+        foreach (var key in possibleKeys)
+        {
+            if (fields.TryGetValue(key.ToLowerInvariant(), out var field) &&
+                !string.IsNullOrWhiteSpace(field.Content))
+                return field.Content;
+        }
+        return null;
+    }
+    
+    private static decimal TryParseDecimal(string input)
+    {
+        if (decimal.TryParse(input?.Replace(",", "").Trim(), out var value))
+            return value;
+        return 0;
+    }
+    
+    private static void ExtractCurrencyAndValue(string input, out string currency, out decimal value)
+    {
+        currency = null;
+        value = 0;
+    
+        if (string.IsNullOrWhiteSpace(input))
+            return;
+    
+        var currencyMatch = Regex.Match(input, @"([\$\€\£])");
+        if (currencyMatch.Success)
+            currency = currencyMatch.Groups[1].Value;
+    
+        var numMatch = Regex.Match(input, @"[\d\.,]+");
+        if (numMatch.Success)
+            decimal.TryParse(numMatch.Value.Replace(",", ""), out value);
+    }
     // -------- Save to DB --------
     private static async Task SaveInvoiceToDatabase(InvoiceData invoice, ILogger log)
     {
