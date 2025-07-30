@@ -1,5 +1,8 @@
 {
   "version": "2.0",
+  "concurrency": {
+    "dynamicConcurrencyEnabled": true
+  },
   "extensions": {
     "blobs": {
       "maxDegreeOfParallelism": 8,
