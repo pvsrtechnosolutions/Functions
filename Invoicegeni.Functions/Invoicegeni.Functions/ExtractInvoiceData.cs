@@ -266,10 +266,12 @@ public class ExtractInvoiceData
             tvp.Columns.Add("ItemDescription", typeof(string));
             tvp.Columns.Add("Quantity", typeof(decimal));
             tvp.Columns.Add("UnitPrice", typeof(decimal));
+            tvp.Columns.Add("Amount", typeof(decimal));
+            tvp.Columns.Add("ItemId", typeof(int));
             tvp.Columns.Add("UnitPriceCurrency", typeof(string));
 
             foreach (var li in invoice.LineItems)
-                tvp.Rows.Add(li.ItemDescription, li.Quantity, li.UnitPrice, li.UnitPriceCurrency);
+                tvp.Rows.Add(li.ItemDescription, li.Quantity, li.UnitPrice, li.Amount, li.ItemId, li.UnitPriceCurrency);
 
             var param = cmd.Parameters.AddWithValue("@LineItems", tvp);
             param.SqlDbType = SqlDbType.Structured;
