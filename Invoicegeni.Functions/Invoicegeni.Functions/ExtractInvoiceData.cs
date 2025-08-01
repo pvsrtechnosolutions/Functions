@@ -17,22 +17,50 @@ namespace Invoicegeni.Functions;
 
 public class ExtractInvoiceData
 {
-    private readonly ILogger<ExtractInvoiceData> _logger;
+    private readonly ILogger<ExtractInvoiceData> log;
 
     public ExtractInvoiceData(ILogger<ExtractInvoiceData> logger)
     {
-        _logger = logger;
+        log = logger;
     }
 
     [Function(nameof(ExtractInvoiceData))]
-    public async Task Run([BlobTrigger("invoice/{name}", Connection = "BlobConnectionString")] Stream stream, string name, ILogger log)
+    public async Task Run([BlobTrigger("invoice/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
     {
+
+
+        log.LogInformation($"Triggered by blob: {name}");
+
+        // Load environment variables
+        string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
+        string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
+
+        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
+        {
+            log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
+            return;
+        }
+
+        DocumentIntelligenceClient client;
         try
         {
-            log.LogInformation($"Blob Triggered: {name}");
+            var credential = new AzureKeyCredential(apiKey);
+            client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
+        }
+        catch (Exception ex)
+        {
+            log.LogError($"Failed to initialize DocumentIntelligenceClient: {ex}");
+            return;
+        }
 
-            AzureKeyCredential credential = new AzureKeyCredential(Environment.GetEnvironmentVariable("DICApiKey"));
-            var client = new DocumentIntelligenceClient(new Uri(Environment.GetEnvironmentVariable("DICendpoint")), credential);
+
+        try
+        {
+            //log.LogInformation($"Starting analysis for blob: {name}");
+            //log.LogInformation($"credential: {Environment.GetEnvironmentVariable("DICApiKey")}");
+            //AzureKeyCredential credential = new AzureKeyCredential(Environment.GetEnvironmentVariable("DICApiKey"));
+            //var client = new DocumentIntelligenceClient(new Uri(Environment.GetEnvironmentVariable("DICendpoint")), credential);
+            //log.LogInformation($"Using endpoint: {client}");
             BinaryData content = BinaryData.FromStream(stream);
             var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
             var result = operation.Value;
@@ -76,13 +104,14 @@ public class ExtractInvoiceData
             ExtractLineItems(doc, invoice);
 
             // --- Save to Database ---
-            await SaveInvoiceToDatabase(invoice, _logger);
+            await SaveInvoiceToDatabase(invoice, log);
 
             log.LogInformation($"Invoice {name} processed successfully.");
         }
         catch (Exception ex)
         {
-            log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
+            log.LogError("Exception occurred", ex);
+            // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
         }
     }
 
