@@ -11,13 +11,16 @@
   },
   "logging": {
     "logLevel": {
+      "default": "Information",
+      "Function.ExtractInvoiceData": "Information",
       "Function": "Information",
       "Host.Results": "Information",
       "Host.Aggregator": "Information"
     },
     "applicationInsights": {
       "samplingSettings": {
-        "isEnabled": true
+        "isEnabled": true,
+        "maxTelemetryItemsPerSecond": 5
       },
       "enableLiveMetricsFilters": true
     }
