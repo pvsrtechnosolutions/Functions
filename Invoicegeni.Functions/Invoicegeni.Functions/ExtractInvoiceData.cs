@@ -28,88 +28,96 @@ public class ExtractInvoiceData
 
         log.LogInformation($"Triggered by blob: {name}");
 
-        // Load environment variables
-        string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
-        string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
-
-        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
+        bool isFileExist = await InvoiceExistsAsync(name, log);
+        if (!isFileExist)
         {
-            log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
-            return;
-        }
+            // Load environment variables
+            string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
+            string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
 
-        DocumentIntelligenceClient client;
-        try
-        {
-            var credential = new AzureKeyCredential(apiKey);
-            client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
-        }
-        catch (Exception ex)
-        {
-            log.LogError($"Failed to initialize DocumentIntelligenceClient: {ex}");
-            return;
-        }
-
-
-        try
-        {
-            //log.LogInformation($"Starting analysis for blob: {name}");
-            //log.LogInformation($"credential: {Environment.GetEnvironmentVariable("DICApiKey")}");
-            //AzureKeyCredential credential = new AzureKeyCredential(Environment.GetEnvironmentVariable("DICApiKey"));
-            //var client = new DocumentIntelligenceClient(new Uri(Environment.GetEnvironmentVariable("DICendpoint")), credential);
-            //log.LogInformation($"Using endpoint: {client}");
-            BinaryData content = BinaryData.FromStream(stream);
-            var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
-            var result = operation.Value;
-            var doc = result.Documents[0];
-
-            // --- Build Invoice Object ---
-            var invoice = new InvoiceData
+            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
             {
-                FileName = name,
-                ReceivedDateTime = DateTime.UtcNow,
-                InvoiceType = ExtractInvoiceType(result)
-            };
+                log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
+                return;
+            }
 
-            // --- Field Mapping ---
-            MapField(doc, "VendorName", v => invoice.VendorName = v);
-            MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
-            MapField(doc, "CustomerName", val => invoice.CustomerName = val);
-            MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
-            MapDateField(doc, "DueDate", val => invoice.DueDate = val);
-            MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
-            MapDecimalField(doc, "SubTotal", val => invoice.Subtotal = val);
-            MapDecimalField(doc, "TotalTax", val => invoice.TaxAmount = val);
-            MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
-            MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
+            DocumentIntelligenceClient client;
+            try
+            {
+                var credential = new AzureKeyCredential(apiKey);
+                client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
+            }
+            catch (Exception ex)
+            {
+                log.LogError($"Failed to initialize DocumentIntelligenceClient: {ex}");
+                return;
+            }
 
 
-            ExtractVendorGSTIN(result.Content, invoice);
-            ExtractCustomerPhone(result.Content, invoice);
-            ExtractCustomerAddress(result.Content, invoice);
-            ExtractBankDetailsFromContent(result.Content, invoice);
-            ExtractEmailsAndWebsites(result.Content, invoice);
-            ExtractCurrencyCodes(result.Content, invoice);
-            ExtractDiscountDetails(result.Content, invoice);
-            ExtractTaxDetails(result.Content, invoice);
-            ExtractTotalDetails(result.Content, invoice);
-            ExtractSubtotalDetails(result.Content, invoice);
-            ExtractTotalInWords(result.Content, invoice);
-            ExtractNote(result.Content, invoice);
+            try
+            {
+                //log.LogInformation($"Starting analysis for blob: {name}");
+                //log.LogInformation($"credential: {Environment.GetEnvironmentVariable("DICApiKey")}");
+                //AzureKeyCredential credential = new AzureKeyCredential(Environment.GetEnvironmentVariable("DICApiKey"));
+                //var client = new DocumentIntelligenceClient(new Uri(Environment.GetEnvironmentVariable("DICendpoint")), credential);
+                //log.LogInformation($"Using endpoint: {client}");
+                BinaryData content = BinaryData.FromStream(stream);
+                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
+                var result = operation.Value;
+                var doc = result.Documents[0];
 
-            // -------- Extract Line Items --------
-            ExtractLineItems(doc, invoice);
+                // --- Build Invoice Object ---
+                var invoice = new InvoiceData
+                {
+                    FileName = name,
+                    ReceivedDateTime = DateTime.UtcNow,
+                    InvoiceType = ExtractInvoiceType(result)
+                };
 
-            // --- Save to Database ---
-            await SaveInvoiceToDatabase(invoice, log);
-            await ArchiveTheProcessedFile(name, invoice.VendorName?.Trim().ToLowerInvariant());
+                // --- Field Mapping ---
+                MapField(doc, "VendorName", v => invoice.VendorName = v);
+                MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
+                MapField(doc, "CustomerName", val => invoice.CustomerName = val);
+                MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
+                MapDateField(doc, "DueDate", val => invoice.DueDate = val);
+                MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
+                MapDecimalField(doc, "SubTotal", val => invoice.Subtotal = val);
+                MapDecimalField(doc, "TotalTax", val => invoice.TaxAmount = val);
+                MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
+                MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
 
-            log.LogInformation($"Invoice {name} processed successfully.");
+
+                ExtractVendorGSTIN(result.Content, invoice);
+                ExtractCustomerPhone(result.Content, invoice);
+                ExtractCustomerAddress(result.Content, invoice);
+                ExtractBankDetailsFromContent(result.Content, invoice);
+                ExtractEmailsAndWebsites(result.Content, invoice);
+                ExtractCurrencyCodes(result.Content, invoice);
+                ExtractDiscountDetails(result.Content, invoice);
+                ExtractTaxDetails(result.Content, invoice);
+                ExtractTotalDetails(result.Content, invoice);
+                ExtractSubtotalDetails(result.Content, invoice);
+                ExtractTotalInWords(result.Content, invoice);
+                ExtractNote(result.Content, invoice);
+
+                // -------- Extract Line Items --------
+                ExtractLineItems(doc, invoice);
+
+                // --- Save to Database ---
+                await SaveInvoiceToDatabase(invoice, log);
+                await ArchiveTheProcessedFile(name, invoice.VendorName?.Trim().ToLowerInvariant());
+
+                log.LogInformation($"Invoice {name} processed successfully.");
+            }
+            catch (Exception ex)
+            {
+                log.LogError("Exception occurred", ex);
+                // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
+            }
         }
-        catch (Exception ex)
+        else
         {
-            log.LogError("Exception occurred", ex);
-            // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
+            await ArchiveTheProcessedFile(name, "duplicate");
         }
     }
 
@@ -174,25 +182,25 @@ public class ExtractInvoiceData
     private static void ExtractLineItems(AnalyzedDocument doc, InvoiceData invoice)
     {
         string vendorName = invoice.VendorName?.Trim().ToLowerInvariant() ?? string.Empty;
-    
+
         if (doc.Fields.TryGetValue("Items", out var itemsField) && itemsField.FieldType == DocumentFieldType.List)
         {
             foreach (var item in itemsField.ValueList)
             {
                 var obj = item.ValueDictionary;
                 var fieldMap = obj.ToDictionary(kvp => kvp.Key.Trim().ToLowerInvariant(), kvp => kvp.Value);
-    
+
                 string description = TryGetFieldContent(fieldMap, "description", "item", "item description");
                 string itemId = TryGetFieldContent(fieldMap, "id", "item id", "productcode", "material number", "sku", "item number");
                 decimal quantity = TryParseDecimal(TryGetFieldContent(fieldMap, "quantity", "qty"));
-    
+
                 string rawUnitPrice = null;
                 string rawAmount = null;
-    
+
                 // Vendor-specific field logic
                 if (vendorName.Contains("cq")) // Logic for 1.jpg (Price = UnitPrice)
                 {
-                    rawUnitPrice = TryGetFieldContent(fieldMap, "price", "amount");                    
+                    rawUnitPrice = TryGetFieldContent(fieldMap, "price", "amount");
                 }
                 else if (vendorName.StartsWith("kirk")) // Logic for 2.jpg (explicit UnitPrice + Amount)
                 {
@@ -211,30 +219,30 @@ public class ExtractInvoiceData
                 }
                 else if (vendorName.StartsWith("huff")) // 5.jpg
                 {
-                    rawUnitPrice = TryGetFieldContent(fieldMap,"amount");                   
+                    rawUnitPrice = TryGetFieldContent(fieldMap, "amount");
                 }
                 else // Fallback logic
                 {
                     rawUnitPrice = TryGetFieldContent(fieldMap, "unitprice", "unit price", "price", "amount");
                     rawAmount = TryGetFieldContent(fieldMap, "amount");
                 }
-    
+
                 string currencySymbol = null;
                 decimal unitPrice = 0;
                 decimal amount = 0;
-    
+
                 // Extract unit price
                 if (!string.IsNullOrWhiteSpace(rawUnitPrice))
                     ExtractCurrencyAndValue(rawUnitPrice, out currencySymbol, out unitPrice);
-    
+
                 // Extract total amount
                 if (!string.IsNullOrWhiteSpace(rawAmount))
                     ExtractCurrencyAndValue(rawAmount, out var tempCurrency, out amount);
-    
+
                 // Fallback to computed amount if missing
                 if (amount == 0 && unitPrice > 0 && quantity > 0)
                     amount = unitPrice * quantity;
-    
+
                 var lineItem = new InvoiceLineItem
                 {
                     ItemDescription = description,
@@ -244,12 +252,12 @@ public class ExtractInvoiceData
                     Amount = amount,
                     UnitPriceCurrency = currencySymbol
                 };
-    
+
                 invoice.LineItems.Add(lineItem);
             }
         }
     }
-    
+
     // 🧰 Helper methods
     private static string TryGetFieldContent(Dictionary<string, DocumentField> fields, params string[] possibleKeys)
     {
@@ -261,31 +269,58 @@ public class ExtractInvoiceData
         }
         return null;
     }
-    
+
     private static decimal TryParseDecimal(string input)
     {
         if (decimal.TryParse(input?.Replace(",", "").Trim(), out var value))
             return value;
         return 0;
     }
-    
+
     private static void ExtractCurrencyAndValue(string input, out string currency, out decimal value)
     {
         currency = null;
         value = 0;
-    
+
         if (string.IsNullOrWhiteSpace(input))
             return;
-    
+
         var currencyMatch = Regex.Match(input, @"([\$\€\£])");
         if (currencyMatch.Success)
             currency = currencyMatch.Groups[1].Value;
-    
+
         var numMatch = Regex.Match(input, @"[\d\.,]+");
         if (numMatch.Success)
             decimal.TryParse(numMatch.Value.Replace(",", ""), out value);
     }
-    // -------- Save to DB --------
+
+    private static async Task<bool> InvoiceExistsAsync(string fileName, ILogger log)
+    {
+        string cs = Environment.GetEnvironmentVariable("SqlConnectionString");
+        if (string.IsNullOrWhiteSpace(cs))
+        {
+            log.LogError("SQL connection string is missing or empty.");
+            throw new InvalidOperationException("Missing SQL connection string.");
+        }
+
+        await using var conn = new SqlConnection(cs);
+        await conn.OpenAsync();
+
+        await using var checkCmd = new SqlCommand(
+            "SELECT COUNT(1) FROM Invoices WHERE FileName = @FileName", conn);
+        checkCmd.Parameters.Add("@FileName", SqlDbType.NVarChar, 255).Value = fileName;
+
+        var result = await checkCmd.ExecuteScalarAsync();
+        int count = Convert.ToInt32(result);
+
+        if (count > 0)
+        {
+            log.LogWarning($"Invoice with FileName '{fileName}' already exists. Skipping insert.");
+            return true;
+        }
+        return false;
+    }
+
     private static async Task SaveInvoiceToDatabase(InvoiceData invoice, ILogger log)
     {
         try
@@ -293,20 +328,10 @@ public class ExtractInvoiceData
             string cs = Environment.GetEnvironmentVariable("SqlConnectionString");
             using var conn = new SqlConnection(cs);
             await conn.OpenAsync();
-            using (var checkCmd = new SqlCommand("SELECT COUNT(*) FROM Invoices WHERE FileName = @FileName", conn))
-            {
-                checkCmd.Parameters.AddWithValue("@FileName", invoice.FileName);
-                int count = (int)await checkCmd.ExecuteScalarAsync();
 
-                if (count > 0)
-                {
-                    log.LogWarning($"Invoice with FileName '{invoice.FileName}' already exists. Skipping insert.");
-                    return; // 🚨 Skip inserting duplicate
-                }
-            }
             using var cmd = new SqlCommand("usp_InsertInvoiceData", conn) { CommandType = CommandType.StoredProcedure };
 
-            // Add all parameters (same as final SP)
+            // Add all parameters (same as before)
             cmd.Parameters.AddWithValue("@FileName", invoice.FileName);
             cmd.Parameters.AddWithValue("@ReceivedDateTime", invoice.ReceivedDateTime);
             cmd.Parameters.AddWithValue("@InvoiceType", invoice.InvoiceType ?? (object)DBNull.Value);
@@ -364,7 +389,6 @@ public class ExtractInvoiceData
             param.SqlDbType = SqlDbType.Structured;
             param.TypeName = "dbo.LineItemType";
 
-
             await cmd.ExecuteNonQueryAsync();
         }
         catch (Exception ex)
@@ -373,100 +397,101 @@ public class ExtractInvoiceData
         }
     }
 
+
     private static void ExtractCustomerPhone(string text, InvoiceData invoice)
     {
         if (string.IsNullOrEmpty(text)) return;
-    
+
         // Extract phone only if it appears after "Bill to"
         var match = Regex.Match(
             text,
              @"(?:Bill\s*to|Bill_to|Buyer).*?(Tel|Phone)[:\s]*([+\d\-\(\)\s]+)",
             RegexOptions.IgnoreCase | RegexOptions.Singleline
         );
-    
+
         if (match.Success)
         {
             invoice.CustomerPhone = match.Groups[2].Value.Trim();
         }
     }
 
-     private static void ExtractCustomerAddress(string text, InvoiceData invoice)
-     {
-         if (string.IsNullOrWhiteSpace(text)) return;
-    
-         var lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-         var addressLines = new List<string>();
-         bool inAddressBlock = false;
-         bool expectCustomerNameNext = false;
-    
-         foreach (var rawLine in lines)
-         {
-             var line = rawLine.Trim();
-    
-             // Start block on Buyer / Bill To
-             if (line.StartsWith("Buyer", StringComparison.OrdinalIgnoreCase) ||
-                 line.StartsWith("Bill to", StringComparison.OrdinalIgnoreCase) ||
-                 line.StartsWith("Bill_to", StringComparison.OrdinalIgnoreCase))
-             {
-                 inAddressBlock = true;
-                 addressLines.Clear();
-    
-                 // Try extract name
-                 var parts = line.Split(new[] { ':' }, 2);
-                 if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
-                 {
-                     invoice.CustomerName = parts[1].Trim();
-                 }
-                 else
-                 {
-                     expectCustomerNameNext = true;
-                 }
-    
-                 continue;
-             }
-    
-             if (inAddressBlock)
-             {
-                 if (expectCustomerNameNext)
-                 {
-                     invoice.CustomerName = line;
-                     expectCustomerNameNext = false;
-                     continue;
-                 }
-    
-                 // Break if known section *and* doesn't contain address-like info
-                 if (Regex.IsMatch(line, @"^(Email|Tel|Phone|GSTIN|Qty|QUANTITY|ITEMS|Note|SUB_TOTAL|TOTAL|Description|Date|Bank|Branch|Site|Thank you)", RegexOptions.IgnoreCase)
-                     && !Regex.IsMatch(line, @"\d{5}(\s*US)?$", RegexOptions.IgnoreCase)) // If it ends with ZIP or ZIP US, allow it
-                 {
-                     break;
-                 }
-    
-                 addressLines.Add(line);
-             }
-    
-         }
-    
-         // Smart join: keep lines that look like address even if they came with "Due Date"
-         if (addressLines.Count > 0)
-         {
-             // Try to extract just the address-like part from last line if needed
-             string lastLine = addressLines[^1];
-    
-             // If it has "Due Date :", extract only address portion
-             if (lastLine.Contains("Due Date", StringComparison.OrdinalIgnoreCase))
-             {
-                 var match = Regex.Match(lastLine, @"(\d{2}-[A-Za-z]{3}-\d{4},\s*.+)$");
-                 if (match.Success)
-                     addressLines[^1] = match.Groups[1].Value.Trim();
-             }
-    
-             invoice.CustomerAddress = Regex.Replace(
-            string.Join(", ", addressLines).TrimEnd(',') + ",",
-            @"\b(Due\s*Date|Date)\s*:\s*[^,]+,\s*",
-            string.Empty,
-            RegexOptions.IgnoreCase);
-         }
-     }
+    private static void ExtractCustomerAddress(string text, InvoiceData invoice)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var lines = text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        var addressLines = new List<string>();
+        bool inAddressBlock = false;
+        bool expectCustomerNameNext = false;
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.Trim();
+
+            // Start block on Buyer / Bill To
+            if (line.StartsWith("Buyer", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("Bill to", StringComparison.OrdinalIgnoreCase) ||
+                line.StartsWith("Bill_to", StringComparison.OrdinalIgnoreCase))
+            {
+                inAddressBlock = true;
+                addressLines.Clear();
+
+                // Try extract name
+                var parts = line.Split(new[] { ':' }, 2);
+                if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    invoice.CustomerName = parts[1].Trim();
+                }
+                else
+                {
+                    expectCustomerNameNext = true;
+                }
+
+                continue;
+            }
+
+            if (inAddressBlock)
+            {
+                if (expectCustomerNameNext)
+                {
+                    invoice.CustomerName = line;
+                    expectCustomerNameNext = false;
+                    continue;
+                }
+
+                // Break if known section *and* doesn't contain address-like info
+                if (Regex.IsMatch(line, @"^(Email|Tel|Phone|GSTIN|Qty|QUANTITY|ITEMS|Note|SUB_TOTAL|TOTAL|Description|Date|Bank|Branch|Site|Thank you)", RegexOptions.IgnoreCase)
+                    && !Regex.IsMatch(line, @"\d{5}(\s*US)?$", RegexOptions.IgnoreCase)) // If it ends with ZIP or ZIP US, allow it
+                {
+                    break;
+                }
+
+                addressLines.Add(line);
+            }
+
+        }
+
+        // Smart join: keep lines that look like address even if they came with "Due Date"
+        if (addressLines.Count > 0)
+        {
+            // Try to extract just the address-like part from last line if needed
+            string lastLine = addressLines[^1];
+
+            // If it has "Due Date :", extract only address portion
+            if (lastLine.Contains("Due Date", StringComparison.OrdinalIgnoreCase))
+            {
+                var match = Regex.Match(lastLine, @"(\d{2}-[A-Za-z]{3}-\d{4},\s*.+)$");
+                if (match.Success)
+                    addressLines[^1] = match.Groups[1].Value.Trim();
+            }
+
+            invoice.CustomerAddress = Regex.Replace(
+           string.Join(", ", addressLines).TrimEnd(',') + ",",
+           @"\b(Due\s*Date|Date)\s*:\s*[^,]+,\s*",
+           string.Empty,
+           RegexOptions.IgnoreCase);
+        }
+    }
 
     private static void ExtractTotalInWords(string text, InvoiceData invoice)
     {
@@ -499,14 +524,14 @@ public class ExtractInvoiceData
     private static void ExtractVendorGSTIN(string text, InvoiceData invoice)
     {
         if (string.IsNullOrEmpty(text)) return;
-    
+
         // Match GSTIN but stop if "Site" or newline comes after
         var match = Regex.Match(
          text,
          @"GSTIN[:\s]+([A-Z0-9]{15})",
          RegexOptions.IgnoreCase
         );
-    
+
         if (match.Success)
         {
             invoice.VendorGSTIN = match.Groups[1].Value.Trim();
@@ -644,36 +669,36 @@ public class ExtractInvoiceData
     {
         if (string.IsNullOrWhiteSpace(fullText))
             return;
-    
+
         // Step 1: Extract the customer (Bill to) section
         var customerMatch = Regex.Match(
             fullText,
             @"(?:Bill\s*to|Bill_to|Buyer)[:\s]*(.*?)(?=(GSTIN|Qty|ITEMS|Note:|Description|QUANTITY|PRICE|TOTAL|SUB_TOTAL|Thank you))",
             RegexOptions.IgnoreCase | RegexOptions.Singleline);
-    
+
         string customerSection = customerMatch.Success ? customerMatch.Groups[0].Value : "";
-    
+
         // Step 2: Remove the customer section from the full text to get vendor area
         string vendorSection = customerMatch.Success ? fullText.Replace(customerSection, "", StringComparison.OrdinalIgnoreCase) : fullText;
-    
+
         // Step 3: Extract all email addresses
         var emailRegex = new Regex(@"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", RegexOptions.IgnoreCase);
         foreach (Match match in emailRegex.Matches(fullText))
         {
             string email = match.Value;
-    
+
             if ((!string.IsNullOrEmpty(customerSection) && customerSection.Contains(email)) && string.IsNullOrEmpty(invoice.CustomerEmail))
                 invoice.CustomerEmail = email;
             else if ((!string.IsNullOrEmpty(vendorSection) && vendorSection.Contains(email)) || email == invoice.CustomerEmail)
                 invoice.VendorEmail = email;
         }
-    
+
         // Step 4: Extract all website URLs
         var websiteRegex = new Regex(@"(http|https)://[^\s]+|www\.[^\s]+", RegexOptions.IgnoreCase);
         foreach (Match match in websiteRegex.Matches(fullText))
         {
             string website = match.Value;
-    
+
             if (!string.IsNullOrEmpty(customerSection) && customerSection.Contains(website))
                 invoice.CustomerWebsite = website;
             else if (!string.IsNullOrEmpty(vendorSection) && vendorSection.Contains(website))
