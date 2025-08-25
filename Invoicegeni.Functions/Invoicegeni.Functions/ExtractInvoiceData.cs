@@ -7,7 +7,9 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using System.Data;
+using System.Reflection.Metadata;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 
 namespace Invoicegeni.Functions;
@@ -27,100 +29,103 @@ public class ExtractInvoiceData
 
 
         log.LogInformation($"Triggered by blob: {name}");
-
-        bool isFileExist = await InvoiceExistsAsync(name, log);
-        if (!isFileExist)
+        // Load environment variables
+        string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
+        string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
+        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
         {
-            // Load environment variables
-            string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
-            string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
+            log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
+            return;
+        }
+         DocumentIntelligenceClient client;
+        try
+        {
+            var credential = new AzureKeyCredential(apiKey);
+            client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
+        }
+        catch (Exception ex)
+        {
+            log.LogError($"Failed to initialize DocumentIntelligenceClient: {ex}");
+            return;
+        }
+        try
+        {
+            BinaryData content = BinaryData.FromStream(stream);
+            var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
+            var result = operation.Value;
+            var doc = result.Documents[0];
 
-            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
+            if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             {
-                log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
-                return;
+
+                Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(doc, result, name);
+                var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
+                await repo.InsertInvoice(invoice, log);                
             }
-
-            DocumentIntelligenceClient client;
-            try
+            else
             {
-                var credential = new AzureKeyCredential(apiKey);
-                client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
-            }
-            catch (Exception ex)
-            {
-                log.LogError($"Failed to initialize DocumentIntelligenceClient: {ex}");
-                return;
-            }
-
-
-            try
-            {
-                //log.LogInformation($"Starting analysis for blob: {name}");
-                //log.LogInformation($"credential: {Environment.GetEnvironmentVariable("DICApiKey")}");
-                //AzureKeyCredential credential = new AzureKeyCredential(Environment.GetEnvironmentVariable("DICApiKey"));
-                //var client = new DocumentIntelligenceClient(new Uri(Environment.GetEnvironmentVariable("DICendpoint")), credential);
-                //log.LogInformation($"Using endpoint: {client}");
-                BinaryData content = BinaryData.FromStream(stream);
-                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
-                var result = operation.Value;
-                var doc = result.Documents[0];
-
-                // --- Build Invoice Object ---
-                var invoice = new InvoiceData
+                bool isFileExist = await InvoiceExistsAsync(name, log);
+                if (!isFileExist)
                 {
-                    FileName = name,
-                    ReceivedDateTime = DateTime.UtcNow,
-                    InvoiceType = ExtractInvoiceType(result)
-                };
+                    // --- Build Invoice Object ---
+                    var invoice = new InvoiceData
+                    {
+                        FileName = name,
+                        ReceivedDateTime = DateTime.UtcNow,
+                        InvoiceType = InvoiceMapper.ExtractInvoiceType(result)
+                    };
 
-                // --- Field Mapping ---
-                MapField(doc, "VendorName", v => invoice.VendorName = v);
-                MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
-                MapField(doc, "CustomerName", val => invoice.CustomerName = val);
-                MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
-                MapDateField(doc, "DueDate", val => invoice.DueDate = val);
-                MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
-                MapDecimalField(doc, "SubTotal", val => invoice.Subtotal = val);
-                MapDecimalField(doc, "TotalTax", val => invoice.TaxAmount = val);
-                MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
-                MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
+                    // --- Field Mapping ---
+                    MapField(doc, "VendorName", v => invoice.VendorName = v);
+                    MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
+                    MapField(doc, "CustomerName", val => invoice.CustomerName = val);
+                    MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
+                    MapDateField(doc, "DueDate", val => invoice.DueDate = val);
+                    MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
+                    MapDecimalField(doc, "SubTotal", val => invoice.Subtotal = val);
+                    MapDecimalField(doc, "TotalTax", val => invoice.TaxAmount = val);
+                    MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
+                    MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
 
 
-                ExtractVendorGSTIN(result.Content, invoice);
-                ExtractCustomerPhone(result.Content, invoice);
-                ExtractCustomerAddress(result.Content, invoice);
-                ExtractBankDetailsFromContent(result.Content, invoice);
-                ExtractEmailsAndWebsites(result.Content, invoice);
-                ExtractCurrencyCodes(result.Content, invoice);
-                ExtractDiscountDetails(result.Content, invoice);
-                ExtractTaxDetails(result.Content, invoice);
-                ExtractTotalDetails(result.Content, invoice);
-                ExtractSubtotalDetails(result.Content, invoice);
-                ExtractTotalInWords(result.Content, invoice);
-                ExtractNote(result.Content, invoice);
+                    ExtractVendorGSTIN(result.Content, invoice);
+                    ExtractCustomerPhone(result.Content, invoice);
+                    ExtractCustomerAddress(result.Content, invoice);
+                    ExtractBankDetailsFromContent(result.Content, invoice);
+                    ExtractEmailsAndWebsites(result.Content, invoice);
+                    ExtractCurrencyCodes(result.Content, invoice);
+                    ExtractDiscountDetails(result.Content, invoice);
+                    ExtractTaxDetails(result.Content, invoice);
+                    ExtractTotalDetails(result.Content, invoice);
+                    ExtractSubtotalDetails(result.Content, invoice);
+                    ExtractTotalInWords(result.Content, invoice);
+                    ExtractNote(result.Content, invoice);
 
-                // -------- Extract Line Items --------
-                ExtractLineItems(doc, invoice);
+                    // -------- Extract Line Items --------
+                    ExtractLineItems(doc, invoice);
 
-                // --- Save to Database ---
-                await SaveInvoiceToDatabase(invoice, log);
-                await ArchiveTheProcessedFile(name, invoice.VendorName?.Trim().ToLowerInvariant());
+                    // --- Save to Database ---
+                    await SaveInvoiceToDatabase(invoice, log);
+                    await ArchiveTheProcessedFile(name, invoice.VendorName?.Trim().ToLowerInvariant());
 
-                log.LogInformation($"Invoice {name} processed successfully.");
-            }
-            catch (Exception ex)
-            {
-                log.LogError("Exception occurred", ex);
-                // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
+                    log.LogInformation($"Invoice {name} processed successfully.");
+
+                }
+                else
+                {
+                    await ArchiveTheProcessedFile(name, "duplicate");
+                }
             }
         }
-        else
+        catch (Exception ex)
         {
-            await ArchiveTheProcessedFile(name, "duplicate");
+            log.LogError("Exception occurred", ex);
+            // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
         }
+
     }
 
+    #region Jpg processing helpers
     private async Task ArchiveTheProcessedFile(string name, string vendorName)
     {
         try
@@ -601,21 +606,7 @@ public class ExtractInvoiceData
             setter(Convert.ToDecimal(decimal.Parse(System.Text.RegularExpressions.Regex.Match(field.Content, @"-?\d+(\.\d+)?").Value, System.Globalization.CultureInfo.InvariantCulture)));
     }
 
-    private static string ExtractInvoiceType(AnalyzeResult result)
-    {
-        if (!string.IsNullOrEmpty(result.Content))
-        {
-            var lines = result.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var line in lines)
-            {
-                if (line.ToUpper().Contains("INVOICE"))
-                {
-                    return line.Trim();
-                }
-            }
-        }
-        return "Unknown";
-    }
+
     private static void ExtractDiscountDetails(string text, InvoiceData invoice)
     {
         if (string.IsNullOrEmpty(text)) return;
@@ -753,6 +744,10 @@ public class ExtractInvoiceData
         if (termsMatch.Success)
             invoice.PaymentTerms = termsMatch.Groups[1].Value.Trim();
     }
+
+    #endregion
+
+
 }
 
 

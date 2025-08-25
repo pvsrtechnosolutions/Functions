@@ -13,19 +13,21 @@ namespace Invoicegeni.Functions.models
         public DateTime ReceivedDateTime { get; set; }
         public string InvoiceType { get; set; }
 
-        // Vendor
+        // Vendor or supplier details   
         public string VendorName { get; set; }
         public string VendorAddress { get; set; }
         public string VendorEmail { get; set; }
         public string VendorWebsite { get; set; }
-        public string VendorGSTIN { get; set; }
+        public string VendorGSTIN { get; set; }        
 
         // Invoice Header
+
+        public DateTime? InvoiceNo { get; set; }
         public DateTime? InvoiceDate { get; set; }
         public DateTime? DueDate { get; set; }
-        public string PONumber { get; set; }       
+        public string PONumber { get; set; }
 
-        // Customer
+        // Customer or Buyer details
         public string CustomerName { get; set; }
         public string CustomerAddress { get; set; }
         public string CustomerPhone { get; set; }
@@ -44,6 +46,8 @@ namespace Invoicegeni.Functions.models
         public string BranchName { get; set; }
         public string BankAccountNumber { get; set; }
         public string BankSortCode { get; set; }
+        public string BankIBAN { get; set; }//IBAN
+        public string BranchCode{ get; set; } // Swift/BIC
         public string PaymentTerms { get; set; }
 
         public string TaxCurrency { get; set; }
