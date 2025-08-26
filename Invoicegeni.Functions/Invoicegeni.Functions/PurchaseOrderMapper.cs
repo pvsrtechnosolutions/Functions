@@ -113,7 +113,7 @@ namespace Invoicegeni.Functions
                 po.Customer.Address = lines.Length > 1 ? string.Join("\n", lines.Skip(1)) : "";
             }
 
-            var supplierMatch = Regex.Match(allText, @"Supplier:\s*(.*?)\s*(?=Buyer:)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            var supplierMatch = Regex.Match(allText, @"Supplier:\s*(.*?)\s*(?=PO\s*No)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
             if (supplierMatch.Success)
             {
                 var lines = supplierMatch.Groups[1].Value

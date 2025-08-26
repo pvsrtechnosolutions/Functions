@@ -14,7 +14,7 @@ namespace Invoicegeni.Functions
             {
                 string connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
                 string sourceContainer = fileType;
-                string destinationContainer = "archive/" + fileType;
+                string destinationContainer = "archive" ;
 
                 // Sanitize vendor name to avoid special characters in blob path
                 string safeVendorName = Regex.Replace(vendorName ?? "unknownvendor", @"[^a-zA-Z0-9_\- ]", "_");
@@ -27,7 +27,7 @@ namespace Invoicegeni.Functions
                 //string destinationFileName = $"{timestamp}_{name}";
 
                 // Construct full destination blob path
-                string destinationBlobPath = $"{safeVendorName}/{dateFolder}/{name}";
+                string destinationBlobPath = $"{fileType}/{safeVendorName}/{dateFolder}/{name}";
 
                 // Initialize Blob clients
                 BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);

@@ -175,7 +175,7 @@ namespace Invoicegeni.Functions
         }
         public int? GetInvoiceId(SqlConnection conn, SqlTransaction tx, string invoiceNo, string org)
         {
-            const string sql = "SELECT Id FROM Invoice WHERE InvoiceNo = @InvoiceNo AND Org = @Org";
+            const string sql = "SELECT invoiceId FROM Invoice WHERE InvoiceNo = @InvoiceNo AND Org = @Org";
 
             using (var cmd = new SqlCommand(sql, conn, tx))
             {
