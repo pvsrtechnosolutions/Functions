@@ -1,128 +1,172 @@
-﻿using Azure.AI.DocumentIntelligence;
+using Azure.AI.DocumentIntelligence;
 using Invoicegeni.Functions.models;
+using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
 
 namespace Invoicegeni.Functions
 {
     internal class InvoiceMapper
     {
-        internal static Invoiceinfo ExtractDataAndAssigntoInvoiceInfo(AnalyzedDocument doc, AnalyzeResult result, string name)
+        internal static Invoiceinfo ExtractDataAndAssigntoInvoiceInfo(AnalyzeResult result, string name, string orgInfo)
         {
-            var document = result.Documents[0];
-            var invoice = new Invoiceinfo
+
+            if (!orgInfo.Contains("Midlands LOGO"))
             {
-                FileName = name,
-                ReceivedDateTime = DateTime.UtcNow,
-                InvoiceType = ExtractInvoiceType(result),
-                Supplier = new SupplierInfo(),
-                Customer = new CustomerInfo(),
-                Bank = new BankInfo()
-            };
-            
-            invoice.Supplier.Name = GetField(document, "VendorAddressRecipient");
-            invoice.Supplier.Address = GetField(document, "VendorAddress");
-            invoice.Supplier.Email = ExtractSupplierEmailInfo(result.Content, invoice);
-            invoice.Supplier.Phone = ExtractSupplierPhoneInfo(result.Content, invoice);
-            invoice.Supplier.GSTIN = GetField(document, "VendorTaxId");
-            //foreach (var key in document.Fields.Keys)
-            //{
-            //    Console.WriteLine(key);
-            //}
-            // Customer
-            invoice.Customer.Name = GetField(document, "CustomerName");
-            invoice.Customer.Address = GetField(document, "CustomerAddress");
-            invoice.Customer.Email = GetField(document, "CustomerEmail");
-            invoice.Customer.Phone = GetField(document, "CustomerPhoneNumber");
-
-            // Header
-            invoice.InvoiceNo = GetField(document, "InvoiceId");
-            invoice.InvoiceDate = GetDate(document, "InvoiceDate");
-            invoice.DueDate = GetDate(document, "DueDate");
-            invoice.PONumber = GetField(document, "PurchaseOrder");
-            invoice.PaymentTerm = GetField(document, "PaymentTerm");
-            invoice.Org = GetField(document, "VendorName"); 
-            // Totals
-            //invoice.Subtotal = GetDecimal(document, "SubTotal");
-            //invoice.TaxPct = GetDecimal(document, "TotalTax");
-            //invoice.TotalAmount = GetDecimal(document, "InvoiceTotal");
-
-
-            // Bank
-            invoice.Bank.Name = ExtractBankName(result.Content);
-            invoice.Bank.SortCode = ExtractSortCode(result.Content);
-            invoice.Bank.AccountNumber = ExtractAccountNumber(result.Content);
-            invoice.Bank.IBAN = ExtractIBAN(result.Content);
-            invoice.Bank.BranchCode = ExtractBranchCode(result.Content);
-            invoice.Bank.PaymentTerms = ExtractPaymentTerms(result.Content);
-            var lineItems = new List<InvoiceInfoLineItem>();
-            // Line Items
-            if (doc.Fields.TryGetValue("Items", out var itemsField) && itemsField.FieldType == DocumentFieldType.List)
-            {
-                foreach (var item in itemsField.ValueList)
+                var doc = result.Documents[0];
+                var invoice = new Invoiceinfo
                 {
-                    var dict = item.ValueDictionary; // Direct dictionary access
+                    FileName = name,
+                    ReceivedDateTime = DateTime.UtcNow,
+                    InvoiceType = ExtractInvoiceType(result),
+                    Supplier = new SupplierInfo(),
+                    Customer = new CustomerInfo(),
+                    Bank = new BankInfo()
+                };
 
-                    var line = new InvoiceInfoLineItem();
+                invoice.Supplier.Name = GetField(doc, "VendorAddressRecipient");
+                invoice.Supplier.Address = GetField(doc, "VendorAddress");
+                invoice.Supplier.Email = ExtractSupplierEmailInfo(result.Content, invoice);
+                invoice.Supplier.Phone = ExtractSupplierPhoneInfo(result.Content, invoice);
+                invoice.Supplier.GSTIN = GetField(doc, "VendorTaxId");
+                //foreach (var key in document.Fields.Keys)
+                //{
+                //    Console.WriteLine(key);
+                //}
+                // Customer
+                invoice.Customer.Name = GetField(doc, "CustomerName");
+                invoice.Customer.Address = GetField(doc, "CustomerAddress");
+                invoice.Customer.Email = GetField(doc, "CustomerEmail");
+                invoice.Customer.Phone = GetField(doc, "CustomerPhoneNumber");
 
-                    // Iterate over dictionary keys
-                    foreach (var kvp in dict)
+                // Header
+                invoice.InvoiceNo = GetField(doc, "InvoiceId");
+                invoice.InvoiceDate = GetDate(doc, "InvoiceDate");
+                invoice.DueDate = GetDate(doc, "DueDate");
+                invoice.PONumber = GetField(doc, "PurchaseOrder");
+                invoice.PaymentTerm = GetField(doc, "PaymentTerm");
+                invoice.Org = GetField(doc, "VendorName");
+                // Totals
+                //invoice.Subtotal = GetDecimal(document, "SubTotal");
+                //invoice.TaxPct = GetDecimal(document, "TotalTax");
+                //invoice.TotalAmount = GetDecimal(document, "InvoiceTotal");
+
+
+                // Bank
+                invoice.Bank.Name = ExtractBankName(result.Content);
+                invoice.Bank.SortCode = ExtractSortCode(result.Content);
+                invoice.Bank.AccountNumber = ExtractAccountNumber(result.Content);
+                invoice.Bank.IBAN = ExtractIBAN(result.Content);
+                invoice.Bank.BranchCode = ExtractBranchCode(result.Content);
+                invoice.Bank.PaymentTerms = ExtractPaymentTerms(result.Content);
+                var lineItems = new List<InvoiceInfoLineItem>();
+
+                // Line Items
+                if (doc.Fields.TryGetValue("Items", out var itemsField) && itemsField.FieldType == DocumentFieldType.List)
+                {
+                    foreach (var item in itemsField.ValueList)
                     {
-                        string key = kvp.Key;
-                        var valueField = kvp.Value;
+                        var dict = item.ValueDictionary; // Direct dictionary access
 
-                        switch (key)
+                        var line = new InvoiceInfoLineItem();
+
+                        // Iterate over dictionary keys
+                        foreach (var kvp in dict)
                         {
-                            case "Description":
-                                line.Description = valueField.Content;
-                                break;
-                            case "Quantity":
-                                line.Quantity = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
-                                break;
-                            case "TaxRate":
-                                line.VatPercentage = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
-                                break;
-                            case "Amount":
-                                if (!string.IsNullOrEmpty(valueField.Content))
-                                {
-                                    line.TotalAmount = ParseCurrency(valueField.Content);
-                                    line.UnitPriceCurrency = ExtractCurrencySymbol(valueField.Content); // "£"
-                                }
-                                else
-                                {
-                                    line.NetAmount = 0;
-                                    line.UnitPriceCurrency = string.Empty;
-                                }
-                                break;
-                            //case "Total":
-                            //    if (!string.IsNullOrEmpty(valueField.Content))
-                            //    {
-                            //        line.NetAmount = ParseCurrency(valueField.Content);       // 120
-                            //        line.UnitPriceCurrency = ExtractCurrencySymbol(valueField.Content); // "£"
-                            //    }
-                            //    else
-                            //    {
-                            //        line.NetAmount = 0;
-                            //        line.UnitPriceCurrency = string.Empty;
-                            //    }
-                            //    break;
-                            case "Tax":
-                                line.VatAmount = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
-                                break;
-                            case "UnitPrice":
-                                line.UnitPrice = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
-                                break;
+                            string key = kvp.Key;
+                            var valueField = kvp.Value;
+
+                            switch (key)
+                            {
+                                case "Description":
+                                    line.Description = valueField.Content;
+                                    break;
+                                case "Quantity":
+                                    line.Quantity = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
+                                    break;
+                                case "TaxRate":
+                                    line.VatPercentage = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
+                                    break;
+                                case "Amount":
+                                    if (!string.IsNullOrEmpty(valueField.Content))
+                                    {
+                                        line.TotalAmount = ParseCurrency(valueField.Content);
+                                        line.UnitPriceCurrency = ExtractCurrencySymbol(valueField.Content); // "£"
+                                    }
+                                    else
+                                    {
+                                        line.NetAmount = 0;
+                                        line.UnitPriceCurrency = string.Empty;
+                                    }
+                                    break;
+                                case "Tax":
+                                    line.VatAmount = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
+                                    break;
+                                case "UnitPrice":
+                                    line.UnitPrice = !string.IsNullOrEmpty(valueField.Content) ? ParseCurrency(valueField.Content) : 0;
+                                    break;
+                            }
+                        }
+                        line.NetAmount = line.TotalAmount - line.VatAmount;
+                        lineItems.Add(line);
+                    }
+                }
+                invoice.LineItems = lineItems;
+
+                invoice.NetTotal = GetField(doc, "SubTotal");
+                invoice.VatTotal = GetField(doc, "TotalTax");
+                invoice.GrandTotal = GetField(doc, "InvoiceTotal");
+                return invoice;
+            }
+            else
+            {
+                var invoice = new Invoiceinfo
+                {
+                    FileName = name,
+                    Org = orgInfo, // will refine in MapTextToInvoice
+                    ReceivedDateTime = DateTime.UtcNow,
+                    InvoiceType = "INVOICE",
+                    Supplier = new SupplierInfo(),
+                    Customer = new CustomerInfo(),
+                    Bank = new BankInfo(),
+                    LineItems = new List<InvoiceInfoLineItem>()
+                };
+
+                // --- Extract Key-Value Pairs ---
+                MapTextToInvoice(invoice, result);
+
+                // --- Extract Line Item Tables ---
+                foreach (var table in result.Tables)
+                {
+                    var headerRow = table.Cells.GroupBy(c => c.RowIndex).FirstOrDefault();
+                    if (headerRow == null) continue;
+
+                    var headerCells = headerRow.OrderBy(c => c.ColumnIndex).Select(c => c.Content.ToLower()).ToList();
+
+                    if (headerCells.Any(h => h.Contains("description")) && headerCells.Any(h => h.Contains("qty")))
+                    {
+                        foreach (var row in table.Cells.GroupBy(c => c.RowIndex).Skip(1)) // skip header row
+                        {
+                            var cells = row.OrderBy(c => c.ColumnIndex).ToList();
+
+                            var line = new InvoiceInfoLineItem
+                            {
+                                Id = cells.ElementAtOrDefault(0)?.Content,
+                                Description = cells.ElementAtOrDefault(1)?.Content,
+                                Quantity = TryParseDecimal(cells.ElementAtOrDefault(2)?.Content),
+                                UnitPrice = TryParseDecimal(cells.ElementAtOrDefault(3)?.Content),
+                                NetAmount = TryParseDecimal(cells.ElementAtOrDefault(4)?.Content),
+                                VatAmount = TryParseDecimal(cells.ElementAtOrDefault(5)?.Content),
+                                TotalAmount = TryParseDecimal(cells.ElementAtOrDefault(6)?.Content)
+                            };
+
+                            if (!string.IsNullOrEmpty(line.Description))
+                                invoice.LineItems.Add(line);
                         }
                     }
-                    line.NetAmount = line.TotalAmount - line.VatAmount;
-                    lineItems.Add(line);
                 }
+                return invoice;
             }
-            invoice.LineItems = lineItems;
-
-            invoice.NetTotal = GetField(document, "SubTotal");
-            invoice.VatTotal = GetField(document, "TotalTax");
-            invoice.GrandTotal = GetField(document, "InvoiceTotal");
-            return invoice;
+            
         }
         private static decimal? GetDecimal(AnalyzedDocument doc, string name)
         {
@@ -272,6 +316,116 @@ namespace Invoicegeni.Functions
                 return match.Groups[1].Value.Trim();
             }
             return "";
+        }
+
+        private static void MapTextToInvoice(Invoiceinfo invoice, AnalyzeResult result)
+        {
+            var allText = string.Join("\n", result.Pages.SelectMany(p => p.Lines).Select(l => l.Content));
+
+            // --- Customer Block (before Bill To) ---
+            var customerMatch = Regex.Match(allText, @"^(.*?)Bill To:", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            if (customerMatch.Success)
+            {
+                var customerBlock = customerMatch.Groups[1].Value;
+
+                var lines = customerBlock.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(l => l.Trim())
+                            .ToList();
+
+                // ✅ Name = first non-logo line (skip "LOGO" lines, take next)
+                invoice.Customer.Name = lines.FirstOrDefault(l =>
+                                    !l.Contains("LOGO", StringComparison.OrdinalIgnoreCase) &&
+                                    !l.StartsWith("VAT", StringComparison.OrdinalIgnoreCase) &&
+                                    !l.StartsWith("Email", StringComparison.OrdinalIgnoreCase) &&
+                                    !l.StartsWith("Phone", StringComparison.OrdinalIgnoreCase) &&
+                                    !l.StartsWith("Bank", StringComparison.OrdinalIgnoreCase));
+
+                // ✅ VAT
+                //var vatMatch = Regex.Match(customerBlock, @"VAT\s*No[:\s]*([A-Z0-9]+)", RegexOptions.IgnoreCase);
+                //if (vatMatch.Success)
+                //    invoice.Customer.VAT = vatMatch.Groups[1].Value.Trim();
+
+                // ✅ Email
+                var emailMatch = Regex.Match(customerBlock, @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}");
+                if (emailMatch.Success)
+                    invoice.Customer.Email = emailMatch.Value.Trim();
+
+                // ✅ Phone
+                var phoneLine = lines.FirstOrDefault(l => l.StartsWith("Phone", StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(phoneLine))
+                    invoice.Customer.Phone = phoneLine.Replace("Phone:", "", StringComparison.OrdinalIgnoreCase).Trim();
+            }
+
+            // --- Supplier Block (after Bill To up to Bank/Invoice section) ---
+            var supplierMatch = Regex.Match(allText, @"Bill To:\s*(.*?)(Invoice|Bank|Subtotal|Total)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            if (supplierMatch.Success)
+            {
+                var supplierBlock = supplierMatch.Groups[1].Value;
+
+                var lines = supplierBlock.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                                         .Select(l => l.Trim())
+                                         .ToList();
+
+                if (lines.Count > 0) invoice.Supplier.Name = lines[0];
+                invoice.Supplier.Address = string.Join(" ", lines.Skip(1).Where(l => !l.StartsWith("VAT") && !l.StartsWith("Email") && !l.StartsWith("Phone")));
+
+                var vat = Regex.Match(supplierBlock, @"VAT\s*No[:\s]*([A-Z0-9]+)", RegexOptions.IgnoreCase);
+                if (vat.Success) invoice.Supplier.GSTIN = vat.Groups[1].Value.Trim();
+
+                var email = Regex.Match(supplierBlock, @"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})");
+                if (email.Success) invoice.Supplier.Email = email.Groups[1].Value.Trim();
+
+                var phone = Regex.Match(supplierBlock, @"(\+?\d[\d\s\-()]{7,})");
+                if (phone.Success) invoice.Supplier.Phone = phone.Groups[1].Value.Trim();
+            }
+
+            // --- Invoice No ---
+            var invNoMatch = Regex.Match(allText, @"Invoice[:\s]*([A-Z0-9\-]+)", RegexOptions.IgnoreCase);
+            if (invNoMatch.Success)
+                invoice.InvoiceNo = invNoMatch.Groups[1].Value.Trim();
+
+            // --- Invoice Date ---
+            var invDateMatch = Regex.Match(allText, @"Invoice\s*Date[:\s]*([\d\-\/]+)", RegexOptions.IgnoreCase);
+            if (invDateMatch.Success && DateTime.TryParse(invDateMatch.Groups[1].Value, out var invDate))
+                invoice.InvoiceDate = invDate;
+
+            // --- PO Reference ---
+            var poMatch = Regex.Match(allText, @"PO\s*Reference[:\s]*([A-Z0-9\-]+)", RegexOptions.IgnoreCase);
+            if (poMatch.Success)
+                invoice.PONumber = poMatch.Groups[1].Value.Trim();
+
+            // --- Payment Terms ---
+            var payTermsMatch = Regex.Match(allText, @"Payment\s*Terms[:\s]*(.+)", RegexOptions.IgnoreCase);
+            if (payTermsMatch.Success)
+                invoice.PaymentTerm = payTermsMatch.Groups[1].Value.Trim();
+
+            // --- Totals ---
+            var subtotalMatch = Regex.Match(allText, @"Subtotal[:\s]*([^\n]+)", RegexOptions.IgnoreCase);
+            if (subtotalMatch.Success) invoice.NetTotal = subtotalMatch.Groups[1].Value.Trim();
+
+            var vatAmountMatch = Regex.Match(allText, @"VAT\s*\([^)]+\)\s*[:]\s*([£$]?\s*\d+[.,]?\d*)", RegexOptions.IgnoreCase);
+            if (vatAmountMatch.Success)
+                invoice.VatTotal = vatAmountMatch.Groups[1].Value.Trim();
+
+            var grandMatch = Regex.Match(allText, @"Total\s*Due[:\s]*([^\n]+)", RegexOptions.IgnoreCase);
+            if (grandMatch.Success) invoice.GrandTotal = grandMatch.Groups[1].Value.Trim();
+
+            // --- Bank Info ---
+            var bankMatch = Regex.Match(allText, @"Bank:\s*([^\|]+)", RegexOptions.IgnoreCase);
+            if (bankMatch.Success) invoice.Bank.Name = bankMatch.Groups[1].Value.Trim();
+
+            var sortCodeMatch = Regex.Match(allText, @"Sort\s*Code[:\s]*([\d\-]+)", RegexOptions.IgnoreCase);
+            if (sortCodeMatch.Success) invoice.Bank.SortCode = sortCodeMatch.Groups[1].Value.Trim();
+
+            var accountMatch = Regex.Match(allText, @"Acct[:\s]*(\d+)", RegexOptions.IgnoreCase);
+            if (accountMatch.Success) invoice.Bank.AccountNumber = accountMatch.Groups[1].Value.Trim();
+        }
+
+        private static decimal TryParseDecimal(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return 0;
+            var cleaned = Regex.Replace(text, @"[^\d\.\-]", "");
+            return decimal.TryParse(cleaned, out var d) ? d : 0;
         }
     }
 }
