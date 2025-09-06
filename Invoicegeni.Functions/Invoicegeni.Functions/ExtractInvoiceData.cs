@@ -1,4 +1,4 @@
-﻿using Azure;
+using Azure;
 using Azure.AI.DocumentIntelligence;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -37,7 +37,7 @@ public class ExtractInvoiceData
             log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
             return;
         }
-         DocumentIntelligenceClient client;
+        DocumentIntelligenceClient client;
         try
         {
             var credential = new AzureKeyCredential(apiKey);
@@ -51,19 +51,24 @@ public class ExtractInvoiceData
         try
         {
             BinaryData content = BinaryData.FromStream(stream);
-            var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
+            var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);            
+            var orgInfo = GetOrgInfo(operation.Value.Content);
+            if(orgInfo.Contains("Midlands LOGO"))
+            {
+                operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
+            }
             var result = operation.Value;
-            var doc = result.Documents[0];
-
+            
             if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             {
 
-                Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(doc, result, name);
+                Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(result, name, orgInfo);
                 var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
-                await repo.InsertInvoice(invoice, log);                
+                await repo.InsertInvoice(invoice, log);
             }
             else
             {
+                var doc = result.Documents[0];
                 bool isFileExist = await InvoiceExistsAsync(name, log);
                 if (!isFileExist)
                 {
@@ -123,6 +128,22 @@ public class ExtractInvoiceData
             // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
         }
 
+    }
+
+    private string GetOrgInfo(string content)
+    {
+        // Look for everything before "Bill To:"
+        var match = Regex.Match(content, @"^(.*?)Bill To:", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        string orgInfo = "";
+        if (match.Success)
+        {
+            orgInfo = match.Groups[1].Value
+                    .Replace("\r", " ")   // remove carriage return
+                    .Replace("\n", " ")   // remove newline
+                    .Replace("  ", " ")   // cleanup double spaces
+                    .Trim();
+        }
+        return orgInfo;
     }
 
     #region Jpg processing helpers
