@@ -10,7 +10,7 @@ namespace Invoicegeni.Functions
         internal static Invoiceinfo ExtractDataAndAssigntoInvoiceInfo(AnalyzeResult result, string name, string orgInfo)
         {
 
-            if (!orgInfo.Contains("Midlands LOGO"))
+            if (!name.Contains(".pdf"))  //(!orgInfo.Contains("Midlands LOGO"))
             {
                 var doc = result.Documents[0];
                 var invoice = new Invoiceinfo
@@ -142,6 +142,7 @@ namespace Invoicegeni.Functions
 
                     var headerCells = headerRow.OrderBy(c => c.ColumnIndex).Select(c => c.Content.ToLower()).ToList();
 
+                    // ---------------- INVOICE METADATA TABLE ----------------
                     if (headerCells.Any(h => h.Contains("description")) && headerCells.Any(h => h.Contains("qty")))
                     {
                         foreach (var row in table.Cells.GroupBy(c => c.RowIndex).Skip(1)) // skip header row
@@ -150,13 +151,13 @@ namespace Invoicegeni.Functions
 
                             var line = new InvoiceInfoLineItem
                             {
-                                Id = cells.ElementAtOrDefault(0)?.Content,
-                                Description = cells.ElementAtOrDefault(1)?.Content,
-                                Quantity = TryParseDecimal(cells.ElementAtOrDefault(2)?.Content),
-                                UnitPrice = TryParseDecimal(cells.ElementAtOrDefault(3)?.Content),
-                                NetAmount = TryParseDecimal(cells.ElementAtOrDefault(4)?.Content),
-                                VatAmount = TryParseDecimal(cells.ElementAtOrDefault(5)?.Content),
-                                TotalAmount = TryParseDecimal(cells.ElementAtOrDefault(6)?.Content)
+                                Id = cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("code")))?.Content,
+                                Description = cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("description")))?.Content,
+                                Quantity = TryParseDecimal(cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("qty")))?.Content),
+                                UnitPrice = TryParseDecimal(cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("unit")))?.Content),
+                                NetAmount = TryParseDecimal(cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("net")))?.Content),
+                                VatAmount = TryParseDecimal(cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("vat")))?.Content),
+                                TotalAmount = TryParseDecimal(cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("total")))?.Content)
                             };
 
                             if (!string.IsNullOrEmpty(line.Description))
@@ -166,7 +167,7 @@ namespace Invoicegeni.Functions
                 }
                 return invoice;
             }
-            
+
         }
         private static decimal? GetDecimal(AnalyzedDocument doc, string name)
         {
@@ -318,46 +319,114 @@ namespace Invoicegeni.Functions
             return "";
         }
 
+        //private static void MapTextToInvoice(Invoiceinfo invoice, AnalyzeResult result)
+        //{
+        //    var allText = string.Join("\n", result.Pages.SelectMany(p => p.Lines).Select(l => l.Content));
+
+        //    // --- Customer Block (before Bill To) ---
+        //    var customerMatch = Regex.Match(allText, @"^(.*?)Bill To:", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        //    if (customerMatch.Success)
+        //    {
+        //        var customerBlock = customerMatch.Groups[1].Value;
+
+        //        var lines = customerBlock.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+        //                    .Select(l => l.Trim())
+        //                    .ToList();
+
+        //        // ✅ Name = first non-logo line (skip "LOGO" lines, take next)
+        //        invoice.Customer.Name = lines.FirstOrDefault(l =>
+        //                            !l.Contains("LOGO", StringComparison.OrdinalIgnoreCase) &&
+        //                            !l.StartsWith("VAT", StringComparison.OrdinalIgnoreCase) &&
+        //                            !l.StartsWith("Email", StringComparison.OrdinalIgnoreCase) &&
+        //                            !l.StartsWith("Phone", StringComparison.OrdinalIgnoreCase) &&
+        //                            !l.StartsWith("Bank", StringComparison.OrdinalIgnoreCase));
+
+        //        // ✅ VAT
+        //        //var vatMatch = Regex.Match(customerBlock, @"VAT\s*No[:\s]*([A-Z0-9]+)", RegexOptions.IgnoreCase);
+        //        //if (vatMatch.Success)
+        //        //    invoice.Customer.VAT = vatMatch.Groups[1].Value.Trim();
+
+        //        // ✅ Email
+        //        var emailMatch = Regex.Match(customerBlock, @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}");
+        //        if (emailMatch.Success)
+        //            invoice.Customer.Email = emailMatch.Value.Trim();
+
+        //        // ✅ Phone
+        //        var phoneLine = lines.FirstOrDefault(l => l.StartsWith("Phone", StringComparison.OrdinalIgnoreCase));
+        //        if (!string.IsNullOrEmpty(phoneLine))
+        //            invoice.Customer.Phone = phoneLine.Replace("Phone:", "", StringComparison.OrdinalIgnoreCase).Trim();
+        //    }
+
+        //    // --- Supplier Block (after Bill To up to Bank/Invoice section) ---
+        //    var supplierMatch = Regex.Match(allText, @"Bill To:\s*(.*?)(Invoice|Bank|Subtotal|Total)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        //    if (supplierMatch.Success)
+        //    {
+        //        var supplierBlock = supplierMatch.Groups[1].Value;
+
+        //        var lines = supplierBlock.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+        //                                 .Select(l => l.Trim())
+        //                                 .ToList();
+
+        //        if (lines.Count > 0) invoice.Supplier.Name = lines[0];
+        //        invoice.Supplier.Address = string.Join(" ", lines.Skip(1).Where(l => !l.StartsWith("VAT") && !l.StartsWith("Email") && !l.StartsWith("Phone")));
+
+        //        var vat = Regex.Match(supplierBlock, @"VAT\s*No[:\s]*([A-Z0-9]+)", RegexOptions.IgnoreCase);
+        //        if (vat.Success) invoice.Supplier.GSTIN = vat.Groups[1].Value.Trim();
+
+        //        var email = Regex.Match(supplierBlock, @"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})");
+        //        if (email.Success) invoice.Supplier.Email = email.Groups[1].Value.Trim();
+
+        //        var phone = Regex.Match(supplierBlock, @"(\+?\d[\d\s\-()]{7,})");
+        //        if (phone.Success) invoice.Supplier.Phone = phone.Groups[1].Value.Trim();
+        //    }
+
+        //    // --- Invoice No ---
+        //    var invNoMatch = Regex.Match(allText, @"Invoice[:\s]*([A-Z0-9\-]+)", RegexOptions.IgnoreCase);
+        //    if (invNoMatch.Success)
+        //        invoice.InvoiceNo = invNoMatch.Groups[1].Value.Trim();
+
+        //    // --- Invoice Date ---
+        //    var invDateMatch = Regex.Match(allText, @"Invoice\s*Date[:\s]*([\d\-\/]+)", RegexOptions.IgnoreCase);
+        //    if (invDateMatch.Success && DateTime.TryParse(invDateMatch.Groups[1].Value, out var invDate))
+        //        invoice.InvoiceDate = invDate;
+
+        //    // --- PO Reference ---
+        //    var poMatch = Regex.Match(allText, @"PO\s*Reference[:\s]*([A-Z0-9\-]+)", RegexOptions.IgnoreCase);
+        //    if (poMatch.Success)
+        //        invoice.PONumber = poMatch.Groups[1].Value.Trim();
+
+        //    // --- Payment Terms ---
+        //    var payTermsMatch = Regex.Match(allText, @"Payment\s*Terms[:\s]*(.+)", RegexOptions.IgnoreCase);
+        //    if (payTermsMatch.Success)
+        //        invoice.PaymentTerm = payTermsMatch.Groups[1].Value.Trim();
+
+        //    // --- Totals ---
+        //    var subtotalMatch = Regex.Match(allText, @"Subtotal[:\s]*([^\n]+)", RegexOptions.IgnoreCase);
+        //    if (subtotalMatch.Success) invoice.NetTotal = subtotalMatch.Groups[1].Value.Trim();
+
+        //    var vatAmountMatch = Regex.Match(allText, @"VAT\s*\([^)]+\)\s*[:]\s*([£$]?\s*\d+[.,]?\d*)", RegexOptions.IgnoreCase);
+        //    if (vatAmountMatch.Success)
+        //        invoice.VatTotal = vatAmountMatch.Groups[1].Value.Trim();
+
+        //    var grandMatch = Regex.Match(allText, @"Total\s*Due[:\s]*([^\n]+)", RegexOptions.IgnoreCase);
+        //    if (grandMatch.Success) invoice.GrandTotal = grandMatch.Groups[1].Value.Trim();
+
+        //    // --- Bank Info ---
+        //    var bankMatch = Regex.Match(allText, @"Bank:\s*([^\|]+)", RegexOptions.IgnoreCase);
+        //    if (bankMatch.Success) invoice.Bank.Name = bankMatch.Groups[1].Value.Trim();
+
+        //    var sortCodeMatch = Regex.Match(allText, @"Sort\s*Code[:\s]*([\d\-]+)", RegexOptions.IgnoreCase);
+        //    if (sortCodeMatch.Success) invoice.Bank.SortCode = sortCodeMatch.Groups[1].Value.Trim();
+
+        //    var accountMatch = Regex.Match(allText, @"Acct[:\s]*(\d+)", RegexOptions.IgnoreCase);
+        //    if (accountMatch.Success) invoice.Bank.AccountNumber = accountMatch.Groups[1].Value.Trim();
+        //}
         private static void MapTextToInvoice(Invoiceinfo invoice, AnalyzeResult result)
         {
             var allText = string.Join("\n", result.Pages.SelectMany(p => p.Lines).Select(l => l.Content));
 
-            // --- Customer Block (before Bill To) ---
-            var customerMatch = Regex.Match(allText, @"^(.*?)Bill To:", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            if (customerMatch.Success)
-            {
-                var customerBlock = customerMatch.Groups[1].Value;
-
-                var lines = customerBlock.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                            .Select(l => l.Trim())
-                            .ToList();
-
-                // ✅ Name = first non-logo line (skip "LOGO" lines, take next)
-                invoice.Customer.Name = lines.FirstOrDefault(l =>
-                                    !l.Contains("LOGO", StringComparison.OrdinalIgnoreCase) &&
-                                    !l.StartsWith("VAT", StringComparison.OrdinalIgnoreCase) &&
-                                    !l.StartsWith("Email", StringComparison.OrdinalIgnoreCase) &&
-                                    !l.StartsWith("Phone", StringComparison.OrdinalIgnoreCase) &&
-                                    !l.StartsWith("Bank", StringComparison.OrdinalIgnoreCase));
-
-                // ✅ VAT
-                //var vatMatch = Regex.Match(customerBlock, @"VAT\s*No[:\s]*([A-Z0-9]+)", RegexOptions.IgnoreCase);
-                //if (vatMatch.Success)
-                //    invoice.Customer.VAT = vatMatch.Groups[1].Value.Trim();
-
-                // ✅ Email
-                var emailMatch = Regex.Match(customerBlock, @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}");
-                if (emailMatch.Success)
-                    invoice.Customer.Email = emailMatch.Value.Trim();
-
-                // ✅ Phone
-                var phoneLine = lines.FirstOrDefault(l => l.StartsWith("Phone", StringComparison.OrdinalIgnoreCase));
-                if (!string.IsNullOrEmpty(phoneLine))
-                    invoice.Customer.Phone = phoneLine.Replace("Phone:", "", StringComparison.OrdinalIgnoreCase).Trim();
-            }
-
-            // --- Supplier Block (after Bill To up to Bank/Invoice section) ---
-            var supplierMatch = Regex.Match(allText, @"Bill To:\s*(.*?)(Invoice|Bank|Subtotal|Total)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            // ---------------- SUPPLIER BLOCK (before Bill To) ----------------
+            var supplierMatch = Regex.Match(allText, @"^(.*?)Bill To", RegexOptions.Singleline | RegexOptions.IgnoreCase);
             if (supplierMatch.Success)
             {
                 var supplierBlock = supplierMatch.Groups[1].Value;
@@ -366,61 +435,154 @@ namespace Invoicegeni.Functions
                                          .Select(l => l.Trim())
                                          .ToList();
 
-                if (lines.Count > 0) invoice.Supplier.Name = lines[0];
-                invoice.Supplier.Address = string.Join(" ", lines.Skip(1).Where(l => !l.StartsWith("VAT") && !l.StartsWith("Email") && !l.StartsWith("Phone")));
+                // Find first valid line for supplier name
+                //invoice.Supplier.Name = lines.FirstOrDefault(l =>
+                //    !string.IsNullOrWhiteSpace(l) &&
+                //    !Regex.IsMatch(l, @"^(VAT|Tel|Email|Company|Invoice)", RegexOptions.IgnoreCase));
+                if (lines.Count > 1)
+                    invoice.Supplier.Name = lines[1];   // ✅ always take 2nd line
+                else
+                    invoice.Supplier.Name = lines.FirstOrDefault();
+                // Address = lines after name until metadata
+                invoice.Supplier.Address = string.Join(" ", lines
+                 .SkipWhile(l => l != invoice.Supplier.Name)
+                 .Skip(1)
+                 .TakeWhile(l =>
+                     !Regex.IsMatch(l, @"^(VAT|Tel|Email|Company|Invoice|Invoice No|PO Number|GRN|Payment Terms)", RegexOptions.IgnoreCase) &&
+                     !l.Contains("@")));
 
-                var vat = Regex.Match(supplierBlock, @"VAT\s*No[:\s]*([A-Z0-9]+)", RegexOptions.IgnoreCase);
+                // Extract details
+                var email = Regex.Match(supplierBlock, @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}");
+                if (email.Success) invoice.Supplier.Email = email.Value;
+
+                var phone = Regex.Match(supplierBlock, @"Tel\s*([+0-9\s()]+)");
+                if (phone.Success) invoice.Supplier.Phone = phone.Groups[1].Value.Trim();
+
+                var vat = Regex.Match(supplierBlock, @"VAT[:\s]+([A-Z0-9 ]+)");
                 if (vat.Success) invoice.Supplier.GSTIN = vat.Groups[1].Value.Trim();
 
-                var email = Regex.Match(supplierBlock, @"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,})");
-                if (email.Success) invoice.Supplier.Email = email.Groups[1].Value.Trim();
-
-                var phone = Regex.Match(supplierBlock, @"(\+?\d[\d\s\-()]{7,})");
-                if (phone.Success) invoice.Supplier.Phone = phone.Groups[1].Value.Trim();
+                //var companyNo = Regex.Match(supplierBlock, @"Company\s*No[:\s]*([0-9]+)");
+                //if (companyNo.Success) invoice.Supplier.CompanyNumber = companyNo.Groups[1].Value.Trim();
             }
 
-            // --- Invoice No ---
-            var invNoMatch = Regex.Match(allText, @"Invoice[:\s]*([A-Z0-9\-]+)", RegexOptions.IgnoreCase);
-            if (invNoMatch.Success)
-                invoice.InvoiceNo = invNoMatch.Groups[1].Value.Trim();
+            // ---------------- CUSTOMER BLOCK (Bill To section) ----------------
+            // ---------------- CUSTOMER BLOCK (Bill To section) ----------------
+            var customerMatch = Regex.Match(allText,
+                @"Bill To\s*(.*?)(Invoice|PO\s*Number|GRN|Payment\s*Terms|Line Item|Subtotal|Total|Bank)",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase);
 
-            // --- Invoice Date ---
-            var invDateMatch = Regex.Match(allText, @"Invoice\s*Date[:\s]*([\d\-\/]+)", RegexOptions.IgnoreCase);
-            if (invDateMatch.Success && DateTime.TryParse(invDateMatch.Groups[1].Value, out var invDate))
+            if (customerMatch.Success)
+            {
+                var customerBlock = customerMatch.Groups[1].Value;
+                var lines = customerBlock.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                                         .Select(l => l.Trim())
+                                         .ToList();
+
+                // Find first valid line for customer name
+                invoice.Customer.Name = lines.FirstOrDefault(l =>
+                    !string.IsNullOrWhiteSpace(l) &&
+                    !Regex.IsMatch(l, @"^(VAT|Tel|Email|Company|Invoice)", RegexOptions.IgnoreCase));
+
+                // Address = everything after name until metadata
+                invoice.Customer.Address = string.Join(" ", lines
+                .SkipWhile(l => l != invoice.Customer.Name)
+                .Skip(1)
+                .TakeWhile(l =>
+                    !Regex.IsMatch(l, @"^(VAT|Tel|Email|Company|Invoice|Line|Item Code|Description|Qty|Unit Price|Net Amount|Subtotal)", RegexOptions.IgnoreCase) &&
+                    !l.Contains("@") &&
+                    !Regex.IsMatch(l, @"^\d+$")));
+
+                // Email
+                var email = Regex.Match(customerBlock, @"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}");
+                if (email.Success) invoice.Customer.Email = email.Value;
+
+                // Phone
+                var phone = Regex.Match(customerBlock, @"Tel\s*([+0-9\s()]+)");
+                if (phone.Success) invoice.Customer.Phone = phone.Groups[1].Value.Trim();
+
+                // VAT
+                var vat = Regex.Match(customerBlock, @"VAT\s*(No\.?|Number|#)?[:\s]*([A-Z0-9 ]+)", RegexOptions.IgnoreCase);
+                if (vat.Success) invoice.Customer.GSTIN = vat.Groups[2].Value.Trim();
+
+                // Company No
+                //var companyNo = Regex.Match(customerBlock, @"Company\s*No[:\s]*([0-9]+)");
+                //if (companyNo.Success) invoice.Customer.CompanyNumber = companyNo.Groups[1].Value.Trim();
+            }
+
+            // Split the text into lines
+                var allTextlines = allText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+
+            // Dictionary to hold label->value mapping
+            var invoiceMap = new Dictionary<string, string>();
+
+            for (int i = 0; i < allTextlines.Length; i++)
+            {
+                string line = allTextlines[i].Trim();
+
+                switch (line.ToLower())
+                {
+                    case "invoice no":
+                        if (i + 1 < allTextlines.Length) invoiceMap["InvoiceNo"] = allTextlines[i + 6].Trim();
+                        break;
+                    case "invoice date":
+                        if (i + 1 < allTextlines.Length) invoiceMap["InvoiceDate"] = allTextlines[i + 6].Trim();
+                        break;
+                    case "po number":
+                        if (i + 1 < allTextlines.Length) invoiceMap["PONumber"] = allTextlines[i + 6].Trim();
+                        break;
+                    case "vat no":
+                        if (i + 1 < allTextlines.Length) invoiceMap["vatno"] = allTextlines[i + 6].Trim();
+                        break;
+                    case "grn(s)":
+                        if (i + 1 < allTextlines.Length) invoiceMap["GRNNumber"] = allTextlines[i + 6].Trim();
+                        break;
+                    case "payment terms":
+                        if (i + 1 < allTextlines.Length) invoiceMap["PaymentTerm"] = allTextlines[i + 6].Trim();
+                        break;
+                }
+            }
+
+            // Assign values to your invoice object
+            invoice.InvoiceNo = invoiceMap.GetValueOrDefault("InvoiceNo");
+            if (DateTime.TryParse(invoiceMap.GetValueOrDefault("InvoiceDate"), out var invDate))
                 invoice.InvoiceDate = invDate;
+            invoice.PONumber = invoiceMap.GetValueOrDefault("PONumber");
+            invoice.VatTotal = invoiceMap.GetValueOrDefault("vatno");
+            invoice.GRNNumber = invoiceMap.GetValueOrDefault("GRNNumber");
+            invoice.PaymentTerm = invoiceMap.GetValueOrDefault("PaymentTerm");
 
-            // --- PO Reference ---
-            var poMatch = Regex.Match(allText, @"PO\s*Reference[:\s]*([A-Z0-9\-]+)", RegexOptions.IgnoreCase);
-            if (poMatch.Success)
-                invoice.PONumber = poMatch.Groups[1].Value.Trim();
 
-            // --- Payment Terms ---
-            var payTermsMatch = Regex.Match(allText, @"Payment\s*Terms[:\s]*(.+)", RegexOptions.IgnoreCase);
-            if (payTermsMatch.Success)
-                invoice.PaymentTerm = payTermsMatch.Groups[1].Value.Trim();
-
-            // --- Totals ---
-            var subtotalMatch = Regex.Match(allText, @"Subtotal[:\s]*([^\n]+)", RegexOptions.IgnoreCase);
+            // ---------------- TOTALS ----------------
+            var subtotalMatch = Regex.Match(allText, @"Subtotal[:\s]*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
             if (subtotalMatch.Success) invoice.NetTotal = subtotalMatch.Groups[1].Value.Trim();
 
-            var vatAmountMatch = Regex.Match(allText, @"VAT\s*\([^)]+\)\s*[:]\s*([£$]?\s*\d+[.,]?\d*)", RegexOptions.IgnoreCase);
-            if (vatAmountMatch.Success)
-                invoice.VatTotal = vatAmountMatch.Groups[1].Value.Trim();
+            var vatMatch = Regex.Match(allText, @"VAT.*?:\s*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
+            if (vatMatch.Success) invoice.VatTotal = vatMatch.Groups[1].Value.Trim();
 
-            var grandMatch = Regex.Match(allText, @"Total\s*Due[:\s]*([^\n]+)", RegexOptions.IgnoreCase);
-            if (grandMatch.Success) invoice.GrandTotal = grandMatch.Groups[1].Value.Trim();
+            var totalMatch = Regex.Match(allText, @"Total\s*Amount\s*Due[:\s]*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
+            if (totalMatch.Success) invoice.GrandTotal = totalMatch.Groups[1].Value.Trim();
 
-            // --- Bank Info ---
-            var bankMatch = Regex.Match(allText, @"Bank:\s*([^\|]+)", RegexOptions.IgnoreCase);
+            // ---------------- BANK INFO ----------------
+            var bankMatch = Regex.Match(allText, @"Bank:\s*([A-Za-z ]+?)(?=\s*(Sort|Account|IBAN|$))", RegexOptions.IgnoreCase);
             if (bankMatch.Success) invoice.Bank.Name = bankMatch.Groups[1].Value.Trim();
 
-            var sortCodeMatch = Regex.Match(allText, @"Sort\s*Code[:\s]*([\d\-]+)", RegexOptions.IgnoreCase);
-            if (sortCodeMatch.Success) invoice.Bank.SortCode = sortCodeMatch.Groups[1].Value.Trim();
+            var sortMatch = Regex.Match(allText, @"Sort[:\s]*([\d\-]+)", RegexOptions.IgnoreCase);
+            if (sortMatch.Success) invoice.Bank.SortCode = sortMatch.Groups[1].Value.Trim();
 
-            var accountMatch = Regex.Match(allText, @"Acct[:\s]*(\d+)", RegexOptions.IgnoreCase);
-            if (accountMatch.Success) invoice.Bank.AccountNumber = accountMatch.Groups[1].Value.Trim();
+            var acctMatch = Regex.Match(allText, @"Account[:\s]*(\d+)", RegexOptions.IgnoreCase);
+            if (acctMatch.Success) invoice.Bank.AccountNumber = acctMatch.Groups[1].Value.Trim();
+
+            var ibanMatch = Regex.Match(allText, @"IBAN[:\s]*([A-Z0-9 ]+)", RegexOptions.IgnoreCase);
+            if (ibanMatch.Success) invoice.Bank.IBAN = ibanMatch.Groups[1].Value.Trim();
         }
 
+        // Helper function to safely extract next line after a label
+        private static string GetNextLine(string text, string label)
+        {
+            var pattern = label + @"\s*\r?\n\s*(.+)";
+            var match = Regex.Match(text, pattern, RegexOptions.IgnoreCase);
+            return match.Success ? match.Groups[1].Value.Trim() : "";
+        }
         private static decimal TryParseDecimal(string text)
         {
             if (string.IsNullOrEmpty(text)) return 0;
