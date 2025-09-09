@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -22,7 +22,7 @@ namespace Invoicegeni.Functions.models
         public DateTime? InvoiceDate { get; set; }
         public DateTime? DueDate { get; set; }
         public string PONumber { get; set; }
-
+        public string GRNNumber { get; set; }
         public string PaymentTerm { get; set; }
 
         // Customer or Buyer details
@@ -86,6 +86,7 @@ namespace Invoicegeni.Functions.models
         public string Phone { get; set; }
         public string Email { get; set; }
         public string Website { get; set; }
+        public string GSTIN { get; set; }
     }
 
     public class BankInfo
