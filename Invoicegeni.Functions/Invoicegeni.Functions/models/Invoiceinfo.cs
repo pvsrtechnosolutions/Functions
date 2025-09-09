@@ -59,6 +59,7 @@ namespace Invoicegeni.Functions.models
     public class InvoiceInfoLineItem
     {
         public string Id { get; set; }
+        public string ItemCode { get; set; }
         public string Description { get; set; }        
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
@@ -77,6 +78,8 @@ namespace Invoicegeni.Functions.models
         public string Email { get; set; }
         public string Website { get; set; }
         public string GSTIN { get; set; }
+
+        public string CompanyNumber { get; set; }
     }
 
     public class CustomerInfo
@@ -87,6 +90,7 @@ namespace Invoicegeni.Functions.models
         public string Email { get; set; }
         public string Website { get; set; }
         public string GSTIN { get; set; }
+        public string CompanyNumber { get; set; }
     }
 
     public class BankInfo

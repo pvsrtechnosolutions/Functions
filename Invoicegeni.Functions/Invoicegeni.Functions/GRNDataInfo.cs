@@ -29,10 +29,17 @@ namespace Invoicegeni.Functions
     public class GRNDataInfoLineItem
     {
         public string Id { get; set; }
+        public string ItemCode { get; set; }
         public string Description { get; set; }
         public decimal QuantityOrdered { get; set; }
         public decimal QuantityReceived{ get; set; }
+        public decimal UnitPrice { get; set; }
+        public decimal NetAmount { get; set; }
         public DateTime? DeliveryDate { get; set; }
         public string Remarks { get; set; }
+
+        public decimal QuantityInvoiced { get; set; }
+        public decimal BalToreceive { get; set; }
+        public decimal RcvInvoice { get; set; }
     }   
 }
