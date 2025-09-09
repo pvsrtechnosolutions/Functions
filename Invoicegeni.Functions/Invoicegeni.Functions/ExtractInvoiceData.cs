@@ -3,6 +3,7 @@ using Azure.AI.DocumentIntelligence;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Invoicegeni.Functions.models;
+using Microsoft.AspNetCore.SignalR.Protocol;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ using System.Data;
 using System.Reflection.Metadata;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using static Microsoft.ApplicationInsights.MetricDimensionNames.TelemetryContext;
 
 
 namespace Invoicegeni.Functions;
@@ -50,24 +52,21 @@ public class ExtractInvoiceData
         }
         try
         {
-            BinaryData content = BinaryData.FromStream(stream);
-            var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);            
-            var orgInfo = GetOrgInfo(operation.Value.Content);
-            if(orgInfo.Contains("Midlands LOGO"))
-            {
-                operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
-            }
-            var result = operation.Value;
-            
+            BinaryData content = BinaryData.FromStream(stream);    
             if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-            {
-
+            {                
+                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
+                var result = operation.Value;
+                var orgInfo = GetOrgInfo(operation.Value.Content);
                 Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(result, name, orgInfo);
                 var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
                 await repo.InsertInvoice(invoice, log);
+                await ArchiveTheProcessedFile(name, invoice.Org?.Trim().ToLowerInvariant());
             }
             else
             {
+                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
+                var result = operation.Value;
                 var doc = result.Documents[0];
                 bool isFileExist = await InvoiceExistsAsync(name, log);
                 if (!isFileExist)
@@ -133,16 +132,35 @@ public class ExtractInvoiceData
     private string GetOrgInfo(string content)
     {
         // Look for everything before "Bill To:"
-        var match = Regex.Match(content, @"^(.*?)Bill To:", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        var match = Regex.Match(content, @"^(.*?)Bill To", RegexOptions.Singleline | RegexOptions.IgnoreCase);
         string orgInfo = "";
+
         if (match.Success)
         {
-            orgInfo = match.Groups[1].Value
-                    .Replace("\r", " ")   // remove carriage return
-                    .Replace("\n", " ")   // remove newline
-                    .Replace("  ", " ")   // cleanup double spaces
-                    .Trim();
+            // Take everything before "Bill To"
+            var block = match.Groups[1].Value.Trim();
+
+            // Split by line breaks to get the very first line (company name line)
+            orgInfo = block.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                                 .FirstOrDefault() ?? "";
+
+            // Remove extra spaces
+            //firstLine = Regex.Replace(firstLine, @"\s+", " ").Trim();
+
+            //// Remove suffixes like Ltd, Limited, Pvt, etc.
+            //var companyName = Regex.Replace(firstLine, @"\b(LTD|LIMITED|PVT|PRIVATE|PLC|INC|CORP)\b",
+            //                                "", RegexOptions.IgnoreCase).Trim();
+
+            //// Split into words and take only the first 2
+            //var words = companyName.Split(' ')
+            //                       .Where(w => !string.IsNullOrWhiteSpace(w))
+            //                       .Take(2)
+            //                       .ToArray();
+
+            //if (words.Length > 0)
+            //    orgInfo = string.Concat(words.Select(w => w[0])).ToUpper();
         }
+
         return orgInfo;
     }
 
