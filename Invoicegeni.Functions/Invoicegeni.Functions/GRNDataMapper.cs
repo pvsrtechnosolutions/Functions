@@ -81,6 +81,9 @@ namespace Invoicegeni.Functions
                     grn.Supplier.Address = string.Join("\n", lines.Skip(1).TakeWhile(l => !l.StartsWith("Tel", StringComparison.OrdinalIgnoreCase) &&
                                                                                           !l.Contains("@") &&
                                                                                           !l.StartsWith("VAT", StringComparison.OrdinalIgnoreCase)));
+                    var CompanyNo = lines.FirstOrDefault(l => l.StartsWith("Company No.", StringComparison.OrdinalIgnoreCase));
+                    if (!string.IsNullOrEmpty(CompanyNo))
+                        grn.Supplier.CompanyNumber = CompanyNo.Replace("Company No.", "", StringComparison.OrdinalIgnoreCase).Trim();
                     grn.Supplier.Phone = lines.FirstOrDefault(l => l.StartsWith("Tel", StringComparison.OrdinalIgnoreCase))?.Replace("Tel", "").Trim();
                     grn.Supplier.Email = lines.FirstOrDefault(l => l.Contains("@"));
                     grn.Supplier.GSTIN = supplierVat;

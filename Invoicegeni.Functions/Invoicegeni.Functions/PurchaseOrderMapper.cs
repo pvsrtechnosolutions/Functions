@@ -2,6 +2,7 @@
 using Google.Protobuf.WellKnownTypes;
 using Invoicegeni.Functions.models;
 using System.Text.RegularExpressions;
+using System.Xml;
 
 namespace Invoicegeni.Functions
 {
@@ -13,7 +14,7 @@ namespace Invoicegeni.Functions
             var po = new PurchaseOrderInfo
             {
                 FileName = name,
-                Org = result?.Content?.Split("\n").FirstOrDefault(), // first line often has Org
+                Org = null, //result?.Content?.Split("\n").FirstOrDefault()// first line often has Org
                 ReceivedDateTime = DateTime.UtcNow,
                 DocumentType = "PURCHASE ORDER", // can improve later by detecting
                 Supplier = new SupplierInfo(),
@@ -24,71 +25,7 @@ namespace Invoicegeni.Functions
 
             // --- Extract Key-Value Pairs ---
             MapTextToPurchaseOrder(po, result);
-            // --- Extract Tables for Line Items ---
-            foreach (var table in result.Tables)
-            {
-
-                // look at first row to decide if it's header table or line item table
-                var headerRow = table.Cells.GroupBy(c => c.RowIndex).FirstOrDefault();
-                if (headerRow == null) continue;
-
-                var headerCells = headerRow.OrderBy(c => c.ColumnIndex).Select(c => c.Content.ToLower()).ToList();
-
-                // --- CASE 1: Header Info Table (contains PO Date / Delivery Date / PO Number)
-                if (headerCells.Any(h => h.Contains("po date")) ||
-                    headerCells.Any(h => h.Contains("delivery date")) ||
-                    headerCells.Any(h => h.Contains("po no")))
-                {
-                    foreach (var row in table.Cells.GroupBy(c => c.RowIndex)) // skip header row
-                    {
-                        var cells = row.OrderBy(c => c.ColumnIndex).ToList();
-                        var key = cells.ElementAtOrDefault(0)?.Content?.Trim();
-                        var value = cells.ElementAtOrDefault(1)?.Content?.Trim();
-
-                        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(value))
-                            continue;
-
-                        switch (key.ToLower())
-                        {
-                            case "po date":
-                                po.PODate = DateTime.TryParse(value, out var poDate)
-                                    ? poDate
-                                    : (DateTime?)null;
-                                break;
-
-                            case "delivery date":
-                                po.DeliveryDate = DateTime.TryParse(value, out var deliveryDate)
-                                    ? deliveryDate
-                                    : (DateTime?)null;
-                                break;
-
-                            case "po no":
-                                po.PONumber = value;
-                                break;
-                        }
-                    }
-                }
-                // --- CASE 2: Line Item Table (Description, Quantity, UnitPrice, TotalAmount)
-                else if (headerCells.Any(h => h.Contains("description")) &&
-                         headerCells.Any(h => h.Contains("qty")))
-                {
-                    foreach (var row in table.Cells.GroupBy(c => c.RowIndex).Skip(1)) // skip header row
-                    {
-                        var cells = row.OrderBy(c => c.ColumnIndex).ToList();
-
-                        var line = new PurchaseOrderInfoLineItem
-                        {
-                            Description = cells.ElementAtOrDefault(0)?.Content,
-                            Quantity = TryParseDecimal(cells.ElementAtOrDefault(1)?.Content),
-                            UnitPrice = TryParseDecimal(cells.ElementAtOrDefault(2)?.Content),
-                            TotalAmount = TryParseDecimal(cells.ElementAtOrDefault(3)?.Content)
-                        };
-
-                        if (!string.IsNullOrEmpty(line.Description))
-                            po.LineItems.Add(line);
-                    }
-                }                
-            }
+            
            
             return po;
 
@@ -102,6 +39,115 @@ namespace Invoicegeni.Functions
 
             // Extract Customer (Buyer) Name & Address
             var buyerMatch = Regex.Match(allText, @"Buyer:\s*(.*?)\s*(?=(Email|Tel|VAT|PO No|PO Date))", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            
+            if(buyerMatch.Success)
+            {
+                GetPurchaseOrderInfo(buyerMatch, po, result);
+            }
+            else
+            {
+                // --- PO Number ---
+                var poNumberMatch = Regex.Match(allText, @"PO\s*Number\s*([A-Z0-9]+)", RegexOptions.IgnoreCase);
+                if (poNumberMatch.Success)
+                    po.PONumber = poNumberMatch.Groups[1].Value.Trim();
+
+                // --- Payment Terms ---
+                var paymentTermsMatch = Regex.Match(allText, @"Payment\s*Terms\s*([^\n\r]+)", RegexOptions.IgnoreCase);
+                if (paymentTermsMatch.Success)
+                    po.PaymentTerms = paymentTermsMatch.Groups[1].Value.Trim();
+
+                // --- Customer (Buyer) ---
+                var customerBlockMatch = Regex.Match(allText, @"^([\s\S]+?)PURCHASE ORDER", RegexOptions.IgnoreCase);
+                if (customerBlockMatch.Success)
+                {
+                    var block = customerBlockMatch.Groups[1].Value
+                        .Split('\n')
+                        .Select(l => l.Trim())
+                        .Where(l => !string.IsNullOrWhiteSpace(l))
+                        .ToArray();
+
+                    po.Customer.Name = block.FirstOrDefault();
+                    po.Customer.Address = string.Join("\n",
+                                            block.Skip(1).Where(l =>
+                                                !l.StartsWith("Tel", StringComparison.OrdinalIgnoreCase) &&
+                                                !l.Contains("@") &&
+                                                !l.StartsWith("VAT", StringComparison.OrdinalIgnoreCase) &&
+                                                !l.StartsWith("Company No.", StringComparison.OrdinalIgnoreCase)   // 🚀 new filter
+                                            ));
+                    po.Customer.Phone = block.FirstOrDefault(l => l.StartsWith("Tel"))?.Replace("Tel", "").Trim();
+                    po.Customer.Email = block.FirstOrDefault(l => l.Contains("@"));
+                    var vatLine = block.FirstOrDefault(l => l.StartsWith("VAT"));
+                    if (vatLine != null)
+                        po.Customer.GSTIN = vatLine.Replace("VAT:", "").Trim();
+                }
+
+                // --- Supplier ---
+                var supplierMatch = Regex.Match(allText, @"Supplier\s*([\s\S]+?)Deliver To", RegexOptions.IgnoreCase);
+                if (supplierMatch.Success)
+                {
+                    var block = supplierMatch.Groups[1].Value
+                        .Split('\n')
+                        .Select(l => l.Trim())
+                        .Where(l => !string.IsNullOrWhiteSpace(l))
+                        .ToArray();
+
+                    po.Supplier.Name = block.FirstOrDefault();
+                    po.Supplier.Address = string.Join("\n", block.Skip(1).Where(l => !l.StartsWith("Tel") && !l.Contains("@") && !l.StartsWith("VAT") && !l.StartsWith("Company No.")));
+                    po.Supplier.Phone = block.FirstOrDefault(l => l.StartsWith("Tel"))?.Replace("Tel", "").Trim();
+                    po.Supplier.Email = block.FirstOrDefault(l => l.Contains("@"));
+                    var vatLine = block.FirstOrDefault(l => l.StartsWith("VAT"));
+                    if (vatLine != null)
+                        po.Supplier.GSTIN = vatLine.Replace("VAT:", "").Trim();
+                }
+                // Set Org = Supplier.Name
+                if (!string.IsNullOrEmpty(po.Supplier?.Name))
+                {
+                    po.Org = po.Supplier.Name;
+                }
+                // --- Line Items ---
+                // Example row from PDF: 
+                // 1 ITEM125 Steel Rods (10mm) 22 £28.26 £621.72 22 22
+                //var lineItemMatches = Regex.Matches(allText,
+                //    @"\d+\s+(ITEM\d+)\s+(.+?)\s+(\d+)\s+£([\d.]+)\s+£([\d.]+)\s+(\d+)\s+(\d+)",
+                //    RegexOptions.Multiline);
+                var lineItemMatches = Regex.Matches(allText,
+                    @"(\d+)\s+(ITEM\d+)\s+(.+?)\s+(\d+)\s+£([\d.]+)\s+£([\d.]+)\s+(\d+)\s+(\d+)",
+    RegexOptions.Multiline);
+                foreach (Match m in lineItemMatches)
+                {
+                    po.LineItems.Add(new PurchaseOrderInfoLineItem
+                    {
+                        Id = m.Groups[1].Value,                                // ITEM125
+                        ItemCode = m.Groups[2].Value,                          // same as Id
+                        Description = m.Groups[3].Value.Trim(),                // Steel Rods (10mm)
+                        QuantityOrdered = decimal.TryParse(m.Groups[4].Value, out var qo) ? qo : 0,
+                        UnitPrice = decimal.TryParse(m.Groups[5].Value, out var up) ? up : 0,
+                        TotalAmount = decimal.TryParse(m.Groups[6].Value, out var t) ? t : 0,
+                        QuantityRcvd = decimal.TryParse(m.Groups[7].Value, out var qr) ? qr : 0,
+                        QuantityInvoiced = decimal.TryParse(m.Groups[8].Value, out var qi) ? qi : 0,
+                        UnitPriceCurrency = ""
+                    });
+                }
+
+                // --- Subtotal, VAT, Total ---
+                var subTotalMatch = Regex.Match(allText, @"Subtotal:\s*£([\d.]+)", RegexOptions.IgnoreCase);
+                if (subTotalMatch.Success)
+                    po.SubTotalPOValue = decimal.TryParse(subTotalMatch.Groups[1].Value, out var st) ? st : 0;
+
+                var vatValueMatch = Regex.Match(allText, @"VAT\s*@\s*\d+%:\s*£([\d.]+)", RegexOptions.IgnoreCase);
+                if (vatValueMatch.Success)
+                    po.POVATValue = decimal.TryParse(vatValueMatch.Groups[1].Value, out var vat) ? vat : 0;
+
+                var totalValueMatch = Regex.Match(allText, @"Total\s*PO\s*Value:\s*£([\d.]+)", RegexOptions.IgnoreCase);
+                if (totalValueMatch.Success)
+                    po.TotalPOValue = decimal.TryParse(totalValueMatch.Groups[1].Value, out var tot) ? tot : 0;
+            }
+            
+        }
+
+        private static void GetPurchaseOrderInfo(Match buyerMatch, PurchaseOrderInfo po, AnalyzeResult result)
+        {
+            var allText = string.Join("\n", result.Pages.SelectMany(p => p.Lines).Select(l => l.Content));
             if (buyerMatch.Success)
             {
                 var lines = buyerMatch.Groups[1].Value
@@ -170,6 +216,72 @@ namespace Invoicegeni.Functions
             var swiftMatch = Regex.Match(allText, @"SWIFT/BIC[:\s]*([A-Z0-9]+)", RegexOptions.IgnoreCase);
             if (swiftMatch.Success)
                 po.Bank.BranchCode = swiftMatch.Groups[1].Value.Trim();
+
+            // --- Extract Tables for Line Items ---
+            foreach (var table in result.Tables)
+            {
+
+                // look at first row to decide if it's header table or line item table
+                var headerRow = table.Cells.GroupBy(c => c.RowIndex).FirstOrDefault();
+                if (headerRow == null) continue;
+
+                var headerCells = headerRow.OrderBy(c => c.ColumnIndex).Select(c => c.Content.ToLower()).ToList();
+
+                // --- CASE 1: Header Info Table (contains PO Date / Delivery Date / PO Number)
+                if (headerCells.Any(h => h.Contains("po date")) ||
+                    headerCells.Any(h => h.Contains("delivery date")) ||
+                    headerCells.Any(h => h.Contains("po no")))
+                {
+                    foreach (var row in table.Cells.GroupBy(c => c.RowIndex)) // skip header row
+                    {
+                        var cells = row.OrderBy(c => c.ColumnIndex).ToList();
+                        var key = cells.ElementAtOrDefault(0)?.Content?.Trim();
+                        var value = cells.ElementAtOrDefault(1)?.Content?.Trim();
+
+                        if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(value))
+                            continue;
+
+                        switch (key.ToLower())
+                        {
+                            case "po date":
+                                po.PODate = DateTime.TryParse(value, out var poDate)
+                                    ? poDate
+                                    : (DateTime?)null;
+                                break;
+
+                            case "delivery date":
+                                po.DeliveryDate = DateTime.TryParse(value, out var deliveryDate)
+                                    ? deliveryDate
+                                    : (DateTime?)null;
+                                break;
+
+                            case "po no":
+                                po.PONumber = value;
+                                break;
+                        }
+                    }
+                }
+                // --- CASE 2: Line Item Table (Description, Quantity, UnitPrice, TotalAmount)
+                else if (headerCells.Any(h => h.Contains("description")) &&
+                         headerCells.Any(h => h.Contains("qty")))
+                {
+                    foreach (var row in table.Cells.GroupBy(c => c.RowIndex).Skip(1)) // skip header row
+                    {
+                        var cells = row.OrderBy(c => c.ColumnIndex).ToList();
+
+                        var line = new PurchaseOrderInfoLineItem
+                        {
+                            Description = cells.ElementAtOrDefault(0)?.Content,
+                            QuantityOrdered = TryParseDecimal(cells.ElementAtOrDefault(1)?.Content),
+                            UnitPrice = TryParseDecimal(cells.ElementAtOrDefault(2)?.Content),
+                            TotalAmount = TryParseDecimal(cells.ElementAtOrDefault(3)?.Content)
+                        };
+
+                        if (!string.IsNullOrEmpty(line.Description))
+                            po.LineItems.Add(line);
+                    }
+                }
+            }
         }
 
         private static decimal TryParseDecimal(string? text)

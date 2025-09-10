@@ -163,7 +163,7 @@ namespace Invoicegeni.Functions
             using var cmd = new SqlCommand(sql, conn, tx);
             cmd.Parameters.AddWithValue("@POId", poId);
             cmd.Parameters.AddWithValue("@Description", (object?)item.Description ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@Quantity", item.Quantity);
+            cmd.Parameters.AddWithValue("@Quantity", item.QuantityOrdered);
             cmd.Parameters.AddWithValue("@UnitPrice", item.UnitPrice);
             cmd.Parameters.AddWithValue("@TotalAmount", item.TotalAmount);
             cmd.Parameters.AddWithValue("@UnitPriceCurrency", (object?)item.UnitPriceCurrency ?? DBNull.Value);
