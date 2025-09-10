@@ -151,7 +151,8 @@ namespace Invoicegeni.Functions
 
                             var line = new InvoiceInfoLineItem
                             {
-                                Id = cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("code")))?.Content,
+                                Id = cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("line")))?.Content,
+                                ItemCode = cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("code")))?.Content,
                                 Description = cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("description")))?.Content,
                                 Quantity = TryParseDecimal(cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("qty")))?.Content),
                                 UnitPrice = TryParseDecimal(cells.ElementAtOrDefault(headerCells.FindIndex(h => h.Contains("unit")))?.Content),

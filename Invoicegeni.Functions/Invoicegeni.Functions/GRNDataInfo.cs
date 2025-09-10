@@ -33,12 +33,11 @@ namespace Invoicegeni.Functions
         public string Description { get; set; }
         public decimal QuantityOrdered { get; set; }
         public decimal QuantityReceived{ get; set; }
+        public decimal QuantityInvoiced { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal NetAmount { get; set; }
         public DateTime? DeliveryDate { get; set; }
-        public string Remarks { get; set; }
-
-        public decimal QuantityInvoiced { get; set; }
+        public string Remarks { get; set; }        
         public decimal BalToreceive { get; set; }
         public decimal RcvInvoice { get; set; }
     }   

@@ -69,9 +69,9 @@ namespace Invoicegeni.Functions
                 if (result != null) return (int)result;
             }
 
-            sql = @"INSERT INTO Supplier (Name, Address, Phone, Email, Website, GSTINORVAT, Isactive)
+            sql = @"INSERT INTO Supplier (Name, Address, Phone, Email, Website, GSTINORVAT, Isactive,CompanyNumber)
                 OUTPUT INSERTED.SupplierId
-                VALUES (@Name, @Address, @Phone, @Email, @Website, @GSTINORVAT, 1)";
+                VALUES (@Name, @Address, @Phone, @Email, @Website, @GSTINORVAT, 1, @CompanyNumber)";
             using (var cmd = new SqlCommand(sql, conn, tx))
             {
                 cmd.Parameters.AddWithValue("@Name", supplier.Name);
@@ -80,7 +80,7 @@ namespace Invoicegeni.Functions
                 cmd.Parameters.AddWithValue("@Email", (object?)supplier.Email ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@Website", (object?)supplier.Website ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@GSTINORVAT", (object?)supplier.GSTIN ?? DBNull.Value);
-
+                cmd.Parameters.AddWithValue("@CompanyNumber", (object?)supplier.CompanyNumber ?? DBNull.Value);
                 return (int)cmd.ExecuteScalar();
             }
         }
@@ -95,9 +95,9 @@ namespace Invoicegeni.Functions
                 if (result != null) return (int)result;
             }
 
-            sql = @"INSERT INTO Customer (Name, Address, Phone, Email, Website, Isactive)
+            sql = @"INSERT INTO Customer (Name, Address, Phone, Email, Website, Isactive, CompanyNumber)
                 OUTPUT INSERTED.CustomerId
-                VALUES (@Name, @Address, @Phone, @Email, @Website, 1)";
+                VALUES (@Name, @Address, @Phone, @Email, @Website, 1, @CompanyNumber)";
             using (var cmd = new SqlCommand(sql, conn, tx))
             {
                 cmd.Parameters.AddWithValue("@Name", customer.Name);
@@ -105,7 +105,7 @@ namespace Invoicegeni.Functions
                 cmd.Parameters.AddWithValue("@Phone", (object?)customer.Phone ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@Email", (object?)customer.Email ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@Website", (object?)customer.Website ?? DBNull.Value);
-
+                cmd.Parameters.AddWithValue("@CompanyNumber", (object?)customer.CompanyNumber ?? DBNull.Value);
                 return (int)cmd.ExecuteScalar();
             }
         }
@@ -147,11 +147,11 @@ namespace Invoicegeni.Functions
             //}
             string sql = @"INSERT INTO Invoice (FileName, ReceivedDateTime, InvoiceType, InvoiceNo, InvoiceDate, DueDate, 
                                      PONumber, PaymentTerms, NetTotal, VatTotal, GrandTotal, Isprocessed,
-                                     SupplierId, CustomerId, BankId, Org)
+                                     SupplierId, CustomerId, BankId, Org,GRNNumber)
                 OUTPUT INSERTED.InvoiceId
                 VALUES (@FileName, @ReceivedDateTime, @InvoiceType, @InvoiceNo, @InvoiceDate, @DueDate,
                         @PONumber, @PaymentTerms, @NetTotal, @VatTotal, @GrandTotal, 0,
-                        @SupplierId, @CustomerId, @BankId, @Org)";
+                        @SupplierId, @CustomerId, @BankId, @Org, @GRNNumber)";
             using (var cmd = new SqlCommand(sql, conn, tx))
             {
                 cmd.Parameters.AddWithValue("@FileName", invoice.FileName);
@@ -169,6 +169,7 @@ namespace Invoicegeni.Functions
                 cmd.Parameters.AddWithValue("@CustomerId", customerId);
                 cmd.Parameters.AddWithValue("@BankId", bankId);
                 cmd.Parameters.AddWithValue("@Org", invoice.Org);
+                cmd.Parameters.AddWithValue("@GRNNumber", invoice.GRNNumber);
                 return (int)cmd.ExecuteScalar();
             }
 
@@ -193,9 +194,9 @@ namespace Invoicegeni.Functions
         private void InsertLineItem(SqlConnection conn, SqlTransaction tx, int invoiceId, InvoiceInfoLineItem item)
         {
             string sql = @"INSERT INTO InvoiceLineItem (InvoiceId, Description, Quantity, UnitPrice, VatPercentage,
-                                                    NetAmount, VatAmount, TotalAmount, UnitPriceCurrency)
+                                                    NetAmount, VatAmount, TotalAmount, UnitPriceCurrency, ItemCode)
                        VALUES (@InvoiceId, @Description, @Quantity, @UnitPrice, @VatPercentage,
-                               @NetAmount, @VatAmount, @TotalAmount, @UnitPriceCurrency)";
+                               @NetAmount, @VatAmount, @TotalAmount, @UnitPriceCurrency, @ItemCode)";
             using (var cmd = new SqlCommand(sql, conn, tx))
             {
                 cmd.Parameters.AddWithValue("@InvoiceId", invoiceId);
@@ -207,7 +208,7 @@ namespace Invoicegeni.Functions
                 cmd.Parameters.AddWithValue("@VatAmount", item.VatAmount);
                 cmd.Parameters.AddWithValue("@TotalAmount", item.TotalAmount);
                 cmd.Parameters.AddWithValue("@UnitPriceCurrency", (object?)item.UnitPriceCurrency ?? DBNull.Value);
-
+                cmd.Parameters.AddWithValue("@ItemCode", item.ItemCode);
                 cmd.ExecuteNonQuery();
             }
         }
@@ -215,7 +216,7 @@ namespace Invoicegeni.Functions
         private decimal ParseMoney(string value)
         {
             if (string.IsNullOrWhiteSpace(value)) return 0;
-            return decimal.Parse(value.Replace("£", "").Trim());
+                return decimal.Parse(value.Replace("£", "").Replace("$", "").Trim());
         }
     }
 }

@@ -55,7 +55,7 @@ public class PurchaseOrderProcessor
             {
                 PurchaseOrderInfo purchaseOrder = PurchaseOrderMapper.ExtractDataAndAssigntoPurchaseOrderInfo(result, name);
                 var repo = new PurchaseOrderRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), _logger);
-                await repo.InsertInvoice(purchaseOrder, _logger);
+                await repo.InsertPO(purchaseOrder, _logger);
             }
         }
         catch (Exception ex)

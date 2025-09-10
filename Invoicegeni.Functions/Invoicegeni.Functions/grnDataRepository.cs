@@ -37,7 +37,10 @@ namespace Invoicegeni.Functions
                             int customerId = await GetOrInsertCustomerAsync(conn, tran, grn.Customer);
 
                             // 3. Bank
-                            int bankId = await GetOrInsertBankAsync(conn, tran, grn.Bank);
+                            // 3. Bank
+                            int bankId = 0;
+                            if (!string.IsNullOrEmpty(grn.Bank.Name))
+                                bankId = await GetOrInsertBankAsync(conn, tran, grn.Bank);                            
 
                             // 4. GRN header
                             int grnId = await GetOrInsertGRNAsync(conn, tran, grn, supplierId, customerId, bankId);
@@ -183,8 +186,8 @@ namespace Invoicegeni.Functions
 
         private async Task InsertLineItemAsync(SqlConnection conn, SqlTransaction tran, int grnId, GRNDataInfoLineItem item)
         {
-            string insert = @"INSERT INTO GRNLineItem (GRNId, Description, QuantityOrdered, QuantityReceived, DeliveryDate, Remarks)
-                          VALUES (@GRNId, @Description, @QuantityOrdered, @QuantityReceived, @DeliveryDate, @Remarks)";
+            string insert = @"INSERT INTO GRNLineItem (GRNId, Description, QuantityOrdered, QuantityReceived, DeliveryDate, Remarks, ItemCode, QuantityInvoiced, BalToreceive , RcvInvoice)
+                          VALUES (@GRNId, @Description, @QuantityOrdered, @QuantityReceived, @DeliveryDate, @Remarks,  @ItemCode, @QuantityInvoiced, @BalToreceive , @RcvInvoice)";
             using (SqlCommand cmd = new SqlCommand(insert, conn, tran))
             {
                 cmd.Parameters.AddWithValue("@GRNId", grnId);
@@ -193,6 +196,10 @@ namespace Invoicegeni.Functions
                 cmd.Parameters.AddWithValue("@QuantityReceived", item.QuantityReceived);
                 cmd.Parameters.AddWithValue("@DeliveryDate", (object)item.DeliveryDate ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@Remarks", item.Remarks ?? (object)DBNull.Value);
+                cmd.Parameters.AddWithValue("@ItemCode", item.ItemCode);
+                cmd.Parameters.AddWithValue("@QuantityInvoiced", item.QuantityInvoiced);
+                cmd.Parameters.AddWithValue("@BalToreceive", item.BalToreceive);
+                cmd.Parameters.AddWithValue("@RcvInvoice", item.RcvInvoice);
                 await cmd.ExecuteNonQueryAsync();
             }
         }

@@ -15,7 +15,7 @@ namespace Invoicegeni.Functions
             this._logger = logger;
         }
 
-        internal async Task InsertInvoice(PurchaseOrderInfo po, ILogger logger)
+        internal async Task InsertPO(PurchaseOrderInfo po, ILogger logger)
         {
             using var conn = new SqlConnection(_connectionString);
             conn.Open();
@@ -34,7 +34,9 @@ namespace Invoicegeni.Functions
                     int customerId = GetOrInsertCustomer(conn, tx, po.Customer);
 
                     // 3. Bank
-                    int bankId = GetOrInsertBank(conn, tx, po.Bank);
+                    int bankId = 0;
+                    if (!string.IsNullOrEmpty(po.Bank.Name))                        
+                      bankId = GetOrInsertBank(conn, tx, po.Bank);
 
                     // 4. PurchaseOrder (check Org + PONo uniqueness)
                     int poId = GetOrInsertPurchaseOrder(conn, tx, po, supplierId, customerId, bankId);
@@ -124,9 +126,9 @@ namespace Invoicegeni.Functions
             if (existingId.HasValue) return existingId.Value;
 
             const string insertSql = @"INSERT INTO PurchaseOrderInfo 
-                                       (FileName, Org, ReceivedDateTime, DocumentType, SupplierId, CustomerId, BankId, PONo, PODate, DeliveryDate, InvoiceNumber)
+                                       (FileName, Org, ReceivedDateTime, DocumentType, SupplierId, CustomerId, BankId, PONo, PODate, DeliveryDate, InvoiceNumber, PaymentTerms, POVATValue, TotalPOValue, SubTotalPOValue)
                                        OUTPUT INSERTED.PurchaseOrderId
-                                       VALUES (@FileName, @Org, @ReceivedDateTime, @DocumentType, @SupplierId, @CustomerId, @BankId, @PONo, @PODate, @DeliveryDate, @InvoiceNumber)";
+                                       VALUES (@FileName, @Org, @ReceivedDateTime, @DocumentType, @SupplierId, @CustomerId, @BankId, @PONo, @PODate, @DeliveryDate, @InvoiceNumber, @PaymentTerms, @POVATValue, @TotalPOValue, @SubTotalPOValue)";
 
             using var cmd = new SqlCommand(insertSql, conn, tx);
             cmd.Parameters.AddWithValue("@FileName", po.FileName ?? "");
@@ -140,7 +142,10 @@ namespace Invoicegeni.Functions
             cmd.Parameters.AddWithValue("@PODate", (object?)po.PODate ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@DeliveryDate", (object?)po.DeliveryDate ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@InvoiceNumber", (object?)po.InvoiceNumber ?? DBNull.Value);
-
+            cmd.Parameters.AddWithValue("@PaymentTerms", po.PaymentTerms ?? "");
+            cmd.Parameters.AddWithValue("@POVATValue", po.POVATValue);
+            cmd.Parameters.AddWithValue("@TotalPOValue", po.TotalPOValue);
+            cmd.Parameters.AddWithValue("@SubTotalPOValue", po.SubTotalPOValue);
             return (int)cmd.ExecuteScalar();
         }
 
@@ -157,17 +162,19 @@ namespace Invoicegeni.Functions
 
         private void InsertLineItem(SqlConnection conn, SqlTransaction tx, int poId, PurchaseOrderInfoLineItem item)
         {
-            const string sql = @"INSERT INTO PurchaseOrderInfoLineItem (PurchaseOrderId, Description, Quantity, UnitPrice, TotalAmount, UnitPriceCurrency)
-                                 VALUES (@POId, @Description, @Quantity, @UnitPrice, @TotalAmount, @UnitPriceCurrency)";
+            const string sql = @"INSERT INTO PurchaseOrderInfoLineItem (PurchaseOrderId, Description, QuantityOrdered, UnitPrice, TotalAmount, UnitPriceCurrency,ItemCode, QuantityRcvd, QuantityInvoiced)
+                                 VALUES (@POId, @Description, @QuantityOrdered, @UnitPrice, @TotalAmount, @UnitPriceCurrency,@ItemCode, @QuantityRcvd, @QuantityInvoiced)";
 
             using var cmd = new SqlCommand(sql, conn, tx);
             cmd.Parameters.AddWithValue("@POId", poId);
             cmd.Parameters.AddWithValue("@Description", (object?)item.Description ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@Quantity", item.QuantityOrdered);
+            cmd.Parameters.AddWithValue("@QuantityOrdered", item.QuantityOrdered);
             cmd.Parameters.AddWithValue("@UnitPrice", item.UnitPrice);
             cmd.Parameters.AddWithValue("@TotalAmount", item.TotalAmount);
             cmd.Parameters.AddWithValue("@UnitPriceCurrency", (object?)item.UnitPriceCurrency ?? DBNull.Value);
-
+            cmd.Parameters.AddWithValue("@ItemCode", item.ItemCode);
+            cmd.Parameters.AddWithValue("@QuantityRcvd", item.QuantityRcvd);
+            cmd.Parameters.AddWithValue("@QuantityInvoiced", item.QuantityInvoiced);
             cmd.ExecuteNonQuery();
         }
     }
