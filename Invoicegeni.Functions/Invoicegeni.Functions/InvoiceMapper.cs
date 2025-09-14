@@ -515,7 +515,7 @@ namespace Invoicegeni.Functions
 
             // Dictionary to hold label->value mapping
             var invoiceMap = new Dictionary<string, string>();
-
+            int k = 0;
             for (int i = 0; i < allTextlines.Length; i++)
             {
                 string line = allTextlines[i].Trim();
@@ -523,22 +523,35 @@ namespace Invoicegeni.Functions
                 switch (line.ToLower())
                 {
                     case "invoice no":
-                        if (i + 1 < allTextlines.Length) invoiceMap["InvoiceNo"] = allTextlines[i + 6].Trim();
+                        //if (i + 1 < allTextlines.Length) invoiceMap["InvoiceNo"] = allTextlines[i + 1].Trim().ToLower().Contains("inv") ? allTextlines[i + 1].Trim() :  allTextlines[i + 6].Trim();
+                        if (i + 1 < allTextlines.Length)
+                        {
+                            if (allTextlines[i + 1].Trim().ToLower().Contains("inv") && allTextlines[i + 1].Trim().ToLower()!= "invoice date")
+                            {
+                                invoiceMap["InvoiceNo"] = allTextlines[i + 1].Trim();
+                                k = 1;
+                            }
+                            else if (i + 6 < allTextlines.Length)
+                            {
+                                invoiceMap["InvoiceNo"] = allTextlines[i + 6].Trim();
+                                k = 6;
+                            }
+                        }
                         break;
                     case "invoice date":
-                        if (i + 1 < allTextlines.Length) invoiceMap["InvoiceDate"] = allTextlines[i + 6].Trim();
+                        if (i + 1 < allTextlines.Length) invoiceMap["InvoiceDate"] = allTextlines[i + k].Trim();
                         break;
                     case "po number":
-                        if (i + 1 < allTextlines.Length) invoiceMap["PONumber"] = allTextlines[i + 6].Trim();
+                        if (i + 1 < allTextlines.Length) invoiceMap["PONumber"] = allTextlines[i + k].Trim();
                         break;
                     case "vat no":
-                        if (i + 1 < allTextlines.Length) invoiceMap["vatno"] = allTextlines[i + 6].Trim();
+                        if (i + 1 < allTextlines.Length) invoiceMap["vatno"] = allTextlines[i + k].Trim();
                         break;
                     case "grn(s)":
-                        if (i + 1 < allTextlines.Length) invoiceMap["GRNNumber"] = allTextlines[i + 6].Trim();
+                        if (i + 1 < allTextlines.Length) invoiceMap["GRNNumber"] = allTextlines[i + k].Trim();
                         break;
                     case "payment terms":
-                        if (i + 1 < allTextlines.Length) invoiceMap["PaymentTerm"] = allTextlines[i + 6].Trim();
+                        if (i + 1 < allTextlines.Length) invoiceMap["PaymentTerm"] = allTextlines[i + k].Trim();
                         break;
                 }
             }
