@@ -5,9 +5,9 @@
   },
   "extensions": {
     "blobs": {
-      "maxDegreeOfParallelism": 16,
-      "batchSize": 64,
-      "newBatchThreshold": 8
+      "maxDegreeOfParallelism": 4,
+      "batchSize": 16,
+      "newBatchThreshold": 4
     }
   },
   "logging": {
