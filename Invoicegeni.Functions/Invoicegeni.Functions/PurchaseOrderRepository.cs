@@ -126,9 +126,9 @@ namespace Invoicegeni.Functions
             if (existingId.HasValue) return existingId.Value;
 
             const string insertSql = @"INSERT INTO PurchaseOrderInfo 
-                                       (FileName, Org, ReceivedDateTime, DocumentType, SupplierId, CustomerId, BankId, PONo, PODate, DeliveryDate, InvoiceNumber, PaymentTerms, POVATValue, TotalPOValue, SubTotalPOValue)
+                                       (FileName, Org, ReceivedDateTime, DocumentType, SupplierId, CustomerId, BankId, PONo, PODate, DeliveryDate, InvoiceNumber, PaymentTerms, POVATValue, TotalPOValue, SubTotalPOValue, Isprocessed)
                                        OUTPUT INSERTED.PurchaseOrderId
-                                       VALUES (@FileName, @Org, @ReceivedDateTime, @DocumentType, @SupplierId, @CustomerId, @BankId, @PONo, @PODate, @DeliveryDate, @InvoiceNumber, @PaymentTerms, @POVATValue, @TotalPOValue, @SubTotalPOValue)";
+                                       VALUES (@FileName, @Org, @ReceivedDateTime, @DocumentType, @SupplierId, @CustomerId, @BankId, @PONo, @PODate, @DeliveryDate, @InvoiceNumber, @PaymentTerms, @POVATValue, @TotalPOValue, @SubTotalPOValue, 0)";
 
             using var cmd = new SqlCommand(insertSql, conn, tx);
             cmd.Parameters.AddWithValue("@FileName", po.FileName ?? "");

@@ -5,10 +5,10 @@
   },
   "extensions": {
     "blobs": {
-      "maxDegreeOfParallelism": 8,
+      "maxDegreeOfParallelism": 10,
       "batchSize": 16,
-      "newBatchThreshold": 8,
-      "maxDequeueCount": 4 // Retry up to 5 times
+      "newBatchThreshold": 10,
+      "maxDequeueCount": 6 // Retry up to 5 times
     }
   },
   "logging": {
