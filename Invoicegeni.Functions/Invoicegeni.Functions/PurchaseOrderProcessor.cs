@@ -20,48 +20,58 @@ public class PurchaseOrderProcessor
     [Function(nameof(PurchaseOrderProcessor))]
     public async Task RunAsync([BlobTrigger("purchaseorder/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
     {
-        //using var blobStreamReader = new StreamReader(stream);
-        //var content = await blobStreamReader.ReadToEndAsync();
-        //_logger.LogInformation("C# Blob trigger function Processed blob\n Name: {name} \n Data: {content}", name, content);
+        int maxRetries = 3;        // Maximum retry attempts
+        int delaySeconds = 5;      // Initial delay for exponential backoff
+        bool processed = false;
 
-
-        _logger.LogInformation($"Triggered by blob: {name}");
-        // Load environment variables
-        string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
-        string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
-        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            _logger.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
-            return;
-        }
-        DocumentIntelligenceClient client;
-        try
-        {
-            var credential = new AzureKeyCredential(apiKey);
-            client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError($"Failed to initialize DocumentIntelligenceClient: {ex}");
-            return;
-        }
-        try
-        {
-            BinaryData content = BinaryData.FromStream(stream);
-            var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
-            var result = operation.Value;
-            //var doc = result.Documents[0];
-            if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                PurchaseOrderInfo purchaseOrder = PurchaseOrderMapper.ExtractDataAndAssigntoPurchaseOrderInfo(result, name);
-                var repo = new PurchaseOrderRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), _logger);
-                await repo.InsertPO(purchaseOrder, _logger);
+                _logger.LogInformation($"Processing blob: {name}, Attempt: {attempt}");
+                // Load environment variables
+                string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
+                string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
+                if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
+                {
+                    _logger.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
+                    return;
+                }
+
+                var credential = new AzureKeyCredential(apiKey);
+                var client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
+                BinaryData content = BinaryData.FromStream(stream);
+                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
+                var result = operation.Value;
+                //var doc = result.Documents[0];
+                if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    PurchaseOrderInfo purchaseOrder = PurchaseOrderMapper.ExtractDataAndAssigntoPurchaseOrderInfo(result, name);
+                    var repo = new PurchaseOrderRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), _logger);
+                    await repo.InsertPO(purchaseOrder, _logger);
+                    _logger.LogInformation($"Blob {name} processed successfully.");
+                }
+                // Mark as processed
+                processed = true;
+                break; // Exit retry loop
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error processing blob: {name}, Attempt: {attempt}");
+
+                if (attempt < maxRetries)
+                {
+                    // Wait before retrying (exponential backoff)
+                    await Task.Delay(delaySeconds * 1000);
+                    delaySeconds *= 2;
+                }
             }
         }
-        catch (Exception ex)
+        if (!processed)
         {
-            _logger.LogError("Exception occurred", ex);
-            // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
+            _logger.LogWarning($"Blob {name} failed after {maxRetries} attempts. It will remain in the container for retry.");
+            // Throw to let Azure Functions runtime retry the blob automatically
+            throw new Exception($"Blob {name} failed all retries");
         }
     }
 }

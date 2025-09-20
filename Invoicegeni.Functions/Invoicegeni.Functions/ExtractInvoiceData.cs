@@ -30,104 +30,117 @@ public class ExtractInvoiceData
     {
 
 
-        log.LogInformation($"Triggered by blob: {name}");
-        // Load environment variables
-        string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
-        string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
-        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
+        int maxRetries = 3;        // Number of retry attempts
+        int delaySeconds = 5;      // Initial delay in seconds for exponential backoff
+        bool processed = false;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
-            return;
-        }
-        DocumentIntelligenceClient client;
-        try
-        {
-            var credential = new AzureKeyCredential(apiKey);
-            client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
-        }
-        catch (Exception ex)
-        {
-            log.LogError($"Failed to initialize DocumentIntelligenceClient: {ex}");
-            return;
-        }
-        try
-        {
-            BinaryData content = BinaryData.FromStream(stream);    
-            if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-            {                
-                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
-                var result = operation.Value;
-                var orgInfo = GetOrgInfo(operation.Value.Content);
-                Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(result, name, orgInfo);
-                await ExtractHeaderInfoInvoice(invoice, content, client);
-                var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
-                await repo.InsertInvoice(invoice, log);
-                await ArchiveTheProcessedFile(name, invoice.Org?.Trim().ToLowerInvariant());
-            }
-            else
+            try
             {
-                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
-                var result = operation.Value;
-                var doc = result.Documents[0];
-                bool isFileExist = await InvoiceExistsAsync(name, log);
-                if (!isFileExist)
+                log.LogInformation($"Processing blob: {name}, Attempt: {attempt}");
+                // Load environment variables
+                string apiKey = Environment.GetEnvironmentVariable("DICApiKey");
+                string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
+                if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
                 {
-                    // --- Build Invoice Object ---
-                    var invoice = new InvoiceData
-                    {
-                        FileName = name,
-                        ReceivedDateTime = DateTime.UtcNow,
-                        InvoiceType = InvoiceMapper.ExtractInvoiceType(result)
-                    };
-
-                    // --- Field Mapping ---
-                    MapField(doc, "VendorName", v => invoice.VendorName = v);
-                    MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
-                    MapField(doc, "CustomerName", val => invoice.CustomerName = val);
-                    MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
-                    MapDateField(doc, "DueDate", val => invoice.DueDate = val);
-                    MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
-                    MapDecimalField(doc, "SubTotal", val => invoice.Subtotal = val);
-                    MapDecimalField(doc, "TotalTax", val => invoice.TaxAmount = val);
-                    MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
-                    MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
+                    log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
+                    return;
+                }
+                var credential = new AzureKeyCredential(apiKey);
+                var client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
 
 
-                    ExtractVendorGSTIN(result.Content, invoice);
-                    ExtractCustomerPhone(result.Content, invoice);
-                    ExtractCustomerAddress(result.Content, invoice);
-                    ExtractBankDetailsFromContent(result.Content, invoice);
-                    ExtractEmailsAndWebsites(result.Content, invoice);
-                    ExtractCurrencyCodes(result.Content, invoice);
-                    ExtractDiscountDetails(result.Content, invoice);
-                    ExtractTaxDetails(result.Content, invoice);
-                    ExtractTotalDetails(result.Content, invoice);
-                    ExtractSubtotalDetails(result.Content, invoice);
-                    ExtractTotalInWords(result.Content, invoice);
-                    ExtractNote(result.Content, invoice);
-
-                    // -------- Extract Line Items --------
-                    ExtractLineItems(doc, invoice);
-
-                    // --- Save to Database ---
-                    await SaveInvoiceToDatabase(invoice, log);
-                    await ArchiveTheProcessedFile(name, invoice.VendorName?.Trim().ToLowerInvariant());
-
-                    log.LogInformation($"Invoice {name} processed successfully.");
-
+                BinaryData content = BinaryData.FromStream(stream);
+                if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
+                    var result = operation.Value;
+                    var orgInfo = GetOrgInfo(operation.Value.Content);
+                    Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(result, name, orgInfo);
+                    await ExtractHeaderInfoInvoice(invoice, content, client);
+                    var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
+                    await repo.InsertInvoice(invoice, log);
+                    await ArchiveTheProcessedFile(name, invoice.Org?.Trim().ToLowerInvariant());
                 }
                 else
                 {
-                    await ArchiveTheProcessedFile(name, "duplicate");
+                    var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
+                    var result = operation.Value;
+                    var doc = result.Documents[0];
+                    bool isFileExist = await InvoiceExistsAsync(name, log);
+                    if (!isFileExist)
+                    {
+                        // --- Build Invoice Object ---
+                        var invoice = new InvoiceData
+                        {
+                            FileName = name,
+                            ReceivedDateTime = DateTime.UtcNow,
+                            InvoiceType = InvoiceMapper.ExtractInvoiceType(result)
+                        };
+
+                        // --- Field Mapping ---
+                        MapField(doc, "VendorName", v => invoice.VendorName = v);
+                        MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
+                        MapField(doc, "CustomerName", val => invoice.CustomerName = val);
+                        MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
+                        MapDateField(doc, "DueDate", val => invoice.DueDate = val);
+                        MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
+                        MapDecimalField(doc, "SubTotal", val => invoice.Subtotal = val);
+                        MapDecimalField(doc, "TotalTax", val => invoice.TaxAmount = val);
+                        MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
+                        MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
+
+
+                        ExtractVendorGSTIN(result.Content, invoice);
+                        ExtractCustomerPhone(result.Content, invoice);
+                        ExtractCustomerAddress(result.Content, invoice);
+                        ExtractBankDetailsFromContent(result.Content, invoice);
+                        ExtractEmailsAndWebsites(result.Content, invoice);
+                        ExtractCurrencyCodes(result.Content, invoice);
+                        ExtractDiscountDetails(result.Content, invoice);
+                        ExtractTaxDetails(result.Content, invoice);
+                        ExtractTotalDetails(result.Content, invoice);
+                        ExtractSubtotalDetails(result.Content, invoice);
+                        ExtractTotalInWords(result.Content, invoice);
+                        ExtractNote(result.Content, invoice);
+
+                        // -------- Extract Line Items --------
+                        ExtractLineItems(doc, invoice);
+
+                        // --- Save to Database ---
+                        await SaveInvoiceToDatabase(invoice, log);
+                        await ArchiveTheProcessedFile(name, invoice.VendorName?.Trim().ToLowerInvariant());
+
+                        log.LogInformation($"Invoice {name} processed successfully.");
+
+                    }
+                    else
+                    {
+                        await ArchiveTheProcessedFile(name, "duplicate");
+                    }
+                }
+                // Mark as processed to exit retry loop
+                processed = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, $"Error processing blob: {name}, Attempt: {attempt}");
+
+                if (attempt < maxRetries)
+                {
+                    // Wait before retrying
+                    await Task.Delay(delaySeconds * 1000);
+                    delaySeconds *= 2; // exponential backoff
                 }
             }
+            if (!processed)
+            {
+                log.LogWarning($"Blob {name} failed after {maxRetries} attempts. It will remain in the container for retry.");
+                // Let Azure Functions retry the blob automatically later
+                throw new Exception($"Blob {name} failed all retries");
+            }
         }
-        catch (Exception ex)
-        {
-            log.LogError("Exception occurred", ex);
-            // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
-        }
-
     }
 
     private async Task ExtractHeaderInfoInvoice(Invoiceinfo invoice, BinaryData content, DocumentIntelligenceClient client)
