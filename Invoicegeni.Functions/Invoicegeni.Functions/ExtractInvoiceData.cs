@@ -59,6 +59,7 @@ public class ExtractInvoiceData
                 var result = operation.Value;
                 var orgInfo = GetOrgInfo(operation.Value.Content);
                 Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(result, name, orgInfo);
+                await ExtractHeaderInfoInvoice(invoice, content, client);
                 var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
                 await repo.InsertInvoice(invoice, log);
                 await ArchiveTheProcessedFile(name, invoice.Org?.Trim().ToLowerInvariant());
@@ -126,6 +127,31 @@ public class ExtractInvoiceData
             log.LogError("Exception occurred", ex);
             // log.LogInformation("C# Blob Trigger filed exception : File Name : " + name+" - Exception : ", ex.Message.ToString());
         }
+
+    }
+
+    private async Task ExtractHeaderInfoInvoice(Invoiceinfo invoice, BinaryData content, DocumentIntelligenceClient client)
+    {
+        var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
+        var result = operation.Value;
+        var doc = result.Documents[0];
+        string invoiceId = doc.Fields.TryGetValue("InvoiceId", out var invoiceIdField) ? invoiceIdField.Content : "";
+        string invoiceDate = doc.Fields.TryGetValue("InvoiceDate", out var invoiceDateField) ? invoiceDateField.Content : "";
+        string poNumber = doc.Fields.TryGetValue("PurchaseOrder", out var poField) ? poField.Content : "";
+        string vendorVat = doc.Fields.TryGetValue("VendorTaxId", out var vatField) ? vatField.Content : "";
+        string paymentTerm = doc.Fields.TryGetValue("PaymentTerm", out var paymentNOtes) ? paymentNOtes.Content : "";
+        // GRN and Payment Terms might not be standard fields, so extract from content elements:
+        string fullText = string.Join(" ", result.Content);
+        string grn = Regex.Match(fullText, @"GRN\(s\)\s+([A-Z0-9]+)").Groups[1].Value;
+        //string paymentTerms = Regex.Match(fullText, @"Payment Terms\s+([^\n\r]+)").Groups[1].Value;
+        // Assign values to your invoice object
+        invoice.InvoiceNo = invoiceId;
+        if (DateTime.TryParse(invoiceDate, out var invDate))
+            invoice.InvoiceDate = invDate;
+        invoice.PONumber = poNumber;
+        invoice.VatNumber = vendorVat;
+        invoice.GRNNumber = grn;
+        invoice.PaymentTerm = paymentTerm;
 
     }
 

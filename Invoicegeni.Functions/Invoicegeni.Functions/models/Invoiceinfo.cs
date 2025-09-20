@@ -22,6 +22,7 @@ namespace Invoicegeni.Functions.models
         public DateTime? InvoiceDate { get; set; }
         public DateTime? DueDate { get; set; }
         public string PONumber { get; set; }
+        public string VatNumber { get; set; }
         public string GRNNumber { get; set; }
         public string PaymentTerm { get; set; }
 
