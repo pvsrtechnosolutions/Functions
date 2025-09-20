@@ -17,7 +17,7 @@ public class GRNDataProcessor
     }
 
     [Function(nameof(GRNDataProcessor))]
-    public async Task Run([BlobTrigger("grndata/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
+    public async Task RunAsync([BlobTrigger("grndata/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
     {
         //using var blobStreamReader = new StreamReader(stream);
         //var content = await blobStreamReader.ReadToEndAsync();

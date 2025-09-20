@@ -26,7 +26,7 @@ public class ExtractInvoiceData
     }
 
     [Function(nameof(ExtractInvoiceData))]
-    public async Task Run([BlobTrigger("invoice/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
+    public async Task RunAsync([BlobTrigger("invoice/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
     {
 
 

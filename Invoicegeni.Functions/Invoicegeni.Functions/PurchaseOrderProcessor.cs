@@ -18,7 +18,7 @@ public class PurchaseOrderProcessor
     }
 
     [Function(nameof(PurchaseOrderProcessor))]
-    public async Task Run([BlobTrigger("purchaseorder/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
+    public async Task RunAsync([BlobTrigger("purchaseorder/{name}", Connection = "AzureWebJobsStorage")] Stream stream, string name)
     {
         //using var blobStreamReader = new StreamReader(stream);
         //var content = await blobStreamReader.ReadToEndAsync();
