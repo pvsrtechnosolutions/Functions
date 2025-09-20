@@ -7,7 +7,8 @@
     "blobs": {
       "maxDegreeOfParallelism": 4,
       "batchSize": 16,
-      "newBatchThreshold": 4
+      "newBatchThreshold": 4,
+      "maxDequeueCount": 5 // Retry up to 5 times
     }
   },
   "logging": {
