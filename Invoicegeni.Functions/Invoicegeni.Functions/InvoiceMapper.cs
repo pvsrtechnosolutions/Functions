@@ -218,7 +218,16 @@ namespace Invoicegeni.Functions
 
             return decimal.TryParse(cleaned, out var result) ? result : 0;
         }
+        private static string GetCurrencySymbol(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
 
+            // Extract the first non-digit, non-dot, non-minus character(s)
+            var match = System.Text.RegularExpressions.Regex.Match(value, @"[^\d.\-\s]+");
+
+            return match.Success ? match.Value.Trim() : string.Empty;
+        }
         private static string ExtractCurrencySymbol(string value)
         {
             if (string.IsNullOrEmpty(value))
@@ -509,18 +518,48 @@ namespace Invoicegeni.Functions
                 //var companyNo = Regex.Match(customerBlock, @"Company\s*No[:\s]*([0-9]+)");
                 //if (companyNo.Success) invoice.Customer.CompanyNumber = companyNo.Groups[1].Value.Trim();
             }
-            
+
 
 
             // ---------------- TOTALS ----------------
-            var subtotalMatch = Regex.Match(allText, @"Subtotal[:\s]*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
-            if (subtotalMatch.Success) invoice.NetTotal = subtotalMatch.Groups[1].Value.Trim();
+            //var subtotalMatch = Regex.Match(allText, @"Subtotal[:\s]*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
+            //if (subtotalMatch.Success) invoice.NetTotal = subtotalMatch.Groups[1].Value.Trim();
 
-            var vatMatch = Regex.Match(allText, @"VAT.*?:\s*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
-            if (vatMatch.Success) invoice.VatTotal = vatMatch.Groups[1].Value.Trim();
+            //var vatMatch = Regex.Match(allText, @"VAT.*?:\s*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
+            //if (vatMatch.Success) invoice.VatTotal = vatMatch.Groups[1].Value.Trim();
 
-            var totalMatch = Regex.Match(allText, @"Total\s*Amount\s*Due[:\s]*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
-            if (totalMatch.Success) invoice.GrandTotal = totalMatch.Groups[1].Value.Trim();
+            //var totalMatch = Regex.Match(allText, @"Total\s*Amount\s*Due[:\s]*([£$]?\s*[\d,]+\.?\d*)", RegexOptions.IgnoreCase);
+            //if (totalMatch.Success) invoice.GrandTotal = totalMatch.Groups[1].Value.Trim();
+
+
+            // Subtotal
+            var subtotalMatch = Regex.Match(allText,
+                @"Subtotal[:\s]*([^\d\s]+)?\s*([\d,]+\.?\d*)",
+                RegexOptions.IgnoreCase);
+            if (subtotalMatch.Success)
+            {
+                invoice.NetTotal = subtotalMatch.Groups[2].Value.Trim();
+            }
+
+            // VAT
+            var vatMatch = Regex.Match(allText,
+                @"VAT.*?:\s*([^\d\s]+)?\s*([\d,]+\.?\d*)",
+                RegexOptions.IgnoreCase);
+            if (vatMatch.Success)
+            {
+                invoice.VatTotal = vatMatch.Groups[2].Value.Trim();
+            }
+
+            // Total Amount Due (use this to also capture currency)
+            var totalMatch = Regex.Match(allText,
+                @"Total\s*Amount\s*Due[:\s]*([^\d\s]+)?\s*([\d,]+\.?\d*)",
+                RegexOptions.IgnoreCase);
+            if (totalMatch.Success)
+            {
+                invoice.Currency = totalMatch.Groups[1].Value.Trim();   // Set currency only once
+                invoice.GrandTotal = totalMatch.Groups[2].Value.Trim();
+            }
+
 
             // ---------------- BANK INFO ----------------
             var bankMatch = Regex.Match(allText, @"Bank:\s*([A-Za-z ]+?)(?=\s*(Sort|Account|IBAN|$))", RegexOptions.IgnoreCase);

@@ -147,11 +147,11 @@ namespace Invoicegeni.Functions
             //}
             string sql = @"INSERT INTO Invoice (FileName, ReceivedDateTime, InvoiceType, InvoiceNo, InvoiceDate, DueDate, 
                                      PONumber, PaymentTerms, NetTotal, VatTotal, GrandTotal, Isprocessed,
-                                     SupplierId, CustomerId, BankId, Org,GRNNumber)
+                                     SupplierId, CustomerId, BankId, Org,GRNNumber, Currency)
                 OUTPUT INSERTED.InvoiceId
                 VALUES (@FileName, @ReceivedDateTime, @InvoiceType, @InvoiceNo, @InvoiceDate, @DueDate,
                         @PONumber, @PaymentTerms, @NetTotal, @VatTotal, @GrandTotal, 0,
-                        @SupplierId, @CustomerId, @BankId, @Org, @GRNNumber)";
+                        @SupplierId, @CustomerId, @BankId, @Org, @GRNNumber , @Currency)";
             using (var cmd = new SqlCommand(sql, conn, tx))
             {
                 cmd.Parameters.AddWithValue("@FileName", invoice.FileName);
@@ -170,6 +170,7 @@ namespace Invoicegeni.Functions
                 cmd.Parameters.AddWithValue("@BankId", bankId);
                 cmd.Parameters.AddWithValue("@Org", invoice.Org);
                 cmd.Parameters.AddWithValue("@GRNNumber", invoice.GRNNumber);
+                cmd.Parameters.AddWithValue("@Currency", invoice.Currency);
                 return (int)cmd.ExecuteScalar();
             }
 

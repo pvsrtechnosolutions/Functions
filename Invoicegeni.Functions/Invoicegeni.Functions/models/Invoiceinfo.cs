@@ -42,7 +42,7 @@ namespace Invoicegeni.Functions.models
         public string VatTotal { get; set; }
         public string GrandTotal { get; set; }
 
-
+        public string Currency { get; set; }
 
         //public string TaxCurrency { get; set; }
         //public string SubtotalCurrency { get; set; }
