@@ -43,24 +43,32 @@ public class ExtractInvoiceData
                 string endpoint = Environment.GetEnvironmentVariable("DICendpoint");
                 if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(endpoint))
                 {
-                    log.LogError($"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
-                    return;
+                    throw new InvalidOperationException(
+                        $"Missing environment variables. ApiKey: {(apiKey ?? "null")}, Endpoint: {(endpoint ?? "null")}");
                 }
                 var credential = new AzureKeyCredential(apiKey);
                 var client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
 
-
+                stream.Position = 0;
                 BinaryData content = BinaryData.FromStream(stream);
                 if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                 {
-                    var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
-                    var result = operation.Value;
-                    var orgInfo = GetOrgInfo(operation.Value.Content);
-                    Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(result, name, orgInfo);
-                    await ExtractHeaderInfoInvoice(invoice, content, client);
-                    var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
-                    await repo.InsertInvoice(invoice, log);
-                    await ArchiveTheProcessedFile(name, invoice.Org?.Trim().ToLowerInvariant());
+                    bool isFileExist = await InvoiceExistsAsync(name, log);
+                    if (!isFileExist)
+                    {
+                        var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
+                        var result = operation.Value;
+                        var orgInfo = GetOrgInfo(operation.Value.Content);
+                        Invoiceinfo invoice = InvoiceMapper.ExtractDataAndAssigntoInvoiceInfo(result, name, orgInfo, log);
+                        await ExtractHeaderInfoInvoice(invoice, content, client);
+                        var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
+                        await repo.InsertInvoice(invoice, log);
+                        await ArchiveTheProcessedFile(name, invoice.Org?.Trim().ToLowerInvariant());
+                    }
+                    else
+                    {
+                        await ArchiveTheProcessedFile(name, "duplicate");
+                    }
                 }
                 else
                 {
