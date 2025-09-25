@@ -134,12 +134,13 @@ public class ExtractInvoiceData
                     delaySeconds *= 2; // exponential backoff
                 }
             }
-            if (!processed)
-            {
-                log.LogWarning($"Blob {name} failed after {maxRetries} attempts. It will remain in the container for retry.");
-                // Let Azure Functions retry the blob automatically later
-                throw new Exception($"Blob {name} failed all retries");
-            }
+            
+        }
+        if (!processed)
+        {
+            log.LogWarning($"Blob {name} failed after {maxRetries} attempts. It will remain in the container for retry.");
+            // Let Azure Functions retry the blob automatically later
+            throw new Exception($"Blob {name} failed all retries");
         }
     }
 
