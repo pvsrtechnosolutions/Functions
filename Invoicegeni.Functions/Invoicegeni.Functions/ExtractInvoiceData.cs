@@ -53,9 +53,9 @@ public class ExtractInvoiceData
                 BinaryData content = BinaryData.FromStream(stream);
                 if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                 {
-                    bool isFileExist = await InvoiceExistsAsync(name, log);
-                    if (!isFileExist)
-                    {
+                    //bool isFileExist = await InvoiceExistsAsync(name, log);
+                    //if (!isFileExist)
+                    //{
                         var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
                         var result = operation.Value;
                         var orgInfo = GetOrgInfo(operation.Value.Content);
@@ -64,69 +64,12 @@ public class ExtractInvoiceData
                         var repo = new InvoiceRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), log);
                         await repo.InsertInvoice(invoice, log);
                         await ArchiveTheProcessedFile(name, invoice.Org?.Trim().ToLowerInvariant());
-                    }
-                    else
-                    {
-                        await ArchiveTheProcessedFile(name, "duplicate");
-                    }
-                }
-                else
-                {
-                    var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-invoice", content);
-                    var result = operation.Value;
-                    var doc = result.Documents[0];
-                    bool isFileExist = await InvoiceExistsAsync(name, log);
-                    if (!isFileExist)
-                    {
-                        // --- Build Invoice Object ---
-                        var invoice = new InvoiceData
-                        {
-                            FileName = name,
-                            ReceivedDateTime = DateTime.UtcNow,
-                            InvoiceType = InvoiceMapper.ExtractInvoiceType(result)
-                        };
-
-                        // --- Field Mapping ---
-                        MapField(doc, "VendorName", v => invoice.VendorName = v);
-                        MapField(doc, "VendorAddress", v => invoice.VendorAddress = v);
-                        MapField(doc, "CustomerName", val => invoice.CustomerName = val);
-                        MapDateField(doc, "InvoiceDate", val => invoice.InvoiceDate = val);
-                        MapDateField(doc, "DueDate", val => invoice.DueDate = val);
-                        MapField(doc, "PurchaseOrder", val => invoice.PONumber = CleanPO(val));
-                        MapDecimalField(doc, "SubTotal", val => invoice.Subtotal = val);
-                        MapDecimalField(doc, "TotalTax", val => invoice.TaxAmount = val);
-                        MapDecimalField(doc, "InvoiceTotal", val => invoice.TotalAmount = val);
-                        MapDecimalField(doc, "TotalDiscount", val => invoice.DiscountAmount = val);
-
-
-                        ExtractVendorGSTIN(result.Content, invoice);
-                        ExtractCustomerPhone(result.Content, invoice);
-                        ExtractCustomerAddress(result.Content, invoice);
-                        ExtractBankDetailsFromContent(result.Content, invoice);
-                        ExtractEmailsAndWebsites(result.Content, invoice);
-                        ExtractCurrencyCodes(result.Content, invoice);
-                        ExtractDiscountDetails(result.Content, invoice);
-                        ExtractTaxDetails(result.Content, invoice);
-                        ExtractTotalDetails(result.Content, invoice);
-                        ExtractSubtotalDetails(result.Content, invoice);
-                        ExtractTotalInWords(result.Content, invoice);
-                        ExtractNote(result.Content, invoice);
-
-                        // -------- Extract Line Items --------
-                        ExtractLineItems(doc, invoice);
-
-                        // --- Save to Database ---
-                        await SaveInvoiceToDatabase(invoice, log);
-                        await ArchiveTheProcessedFile(name, invoice.VendorName?.Trim().ToLowerInvariant());
-
-                        log.LogInformation($"Invoice {name} processed successfully.");
-
-                    }
-                    else
-                    {
-                        await ArchiveTheProcessedFile(name, "duplicate");
-                    }
-                }
+                    //}
+                    //else
+                    //{
+                    //    await ArchiveTheProcessedFile(name, "duplicate");
+                    //}
+                }                
                 // Mark as processed to exit retry loop
                 processed = true;
                 break;
@@ -399,7 +342,7 @@ public class ExtractInvoiceData
         await conn.OpenAsync();
 
         await using var checkCmd = new SqlCommand(
-            "SELECT COUNT(1) FROM Invoices WHERE FileName = @FileName", conn);
+            "SELECT COUNT(1) FROM Invoice WHERE FileName = @FileName", conn);
         checkCmd.Parameters.Add("@FileName", SqlDbType.NVarChar, 255).Value = fileName;
 
         var result = await checkCmd.ExecuteScalarAsync();
