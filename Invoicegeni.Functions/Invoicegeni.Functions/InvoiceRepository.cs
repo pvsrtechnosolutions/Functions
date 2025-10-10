@@ -145,13 +145,23 @@ namespace Invoicegeni.Functions
             //{
             //    return invoiceId.Value; // ✅ return existing ID
             //}
-            string sql = @"INSERT INTO Invoice (FileName, ReceivedDateTime, InvoiceType, InvoiceNo, InvoiceDate, DueDate, 
-                                     PONumber, PaymentTerms, NetTotal, VatTotal, GrandTotal, Isprocessed,
-                                     SupplierId, CustomerId, BankId, Org,GRNNumber, Currency)
-                OUTPUT INSERTED.InvoiceId
-                VALUES (@FileName, @ReceivedDateTime, @InvoiceType, @InvoiceNo, @InvoiceDate, @DueDate,
-                        @PONumber, @PaymentTerms, @NetTotal, @VatTotal, @GrandTotal, 0,
-                        @SupplierId, @CustomerId, @BankId, @Org, @GRNNumber , @Currency)";
+            string sql = @"
+                            DECLARE @NewRows TABLE (InvoiceId INT);
+
+                            INSERT INTO Invoice (
+                                FileName, ReceivedDateTime, InvoiceType, InvoiceNo, InvoiceDate, DueDate,
+                                PONumber, PaymentTerms, NetTotal, VatTotal, GrandTotal, IsProcessed,
+                                SupplierId, CustomerId, BankId, Org, GRNNumber, Currency
+                            )
+                            OUTPUT INSERTED.InvoiceId INTO @NewRows(InvoiceId)
+                            VALUES (
+                                @FileName, @ReceivedDateTime, @InvoiceType, @InvoiceNo, @InvoiceDate, @DueDate,
+                                @PONumber, @PaymentTerms, @NetTotal, @VatTotal, @GrandTotal, 0,
+                                @SupplierId, @CustomerId, @BankId, @Org, @GRNNumber, @Currency
+                            );
+
+                            SELECT TOP (1) InvoiceId FROM @NewRows;
+                            ";
             using (var cmd = new SqlCommand(sql, conn, tx))
             {
                 cmd.Parameters.AddWithValue("@FileName", invoice.FileName);

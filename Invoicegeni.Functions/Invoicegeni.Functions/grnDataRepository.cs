@@ -162,11 +162,21 @@ namespace Invoicegeni.Functions
         {            
             int? existingId = GetGRNDataId(conn, tran, grn.Org, grn.GRNNumber);
             if (existingId.HasValue) return existingId.Value;
-            string insert = @"INSERT INTO GRNData (FileName, Org, ReceivedDateTime, DocumentType, GRNNumber, GRNDate, PONumber,
-                          SupplierId, CustomerId, BankId, IsActive, Isprocessed)
-                          OUTPUT INSERTED.GRNId
-                          VALUES (@FileName, @Org, @ReceivedDateTime, @DocumentType, @GRNNumber, @GRNDate, @PONumber,
-                          @SupplierId, @CustomerId, @BankId, 1, 0)";
+            string insert = @"
+                                DECLARE @NewRows TABLE (GRNId INT);
+
+                                INSERT INTO GRNData (
+                                    FileName, Org, ReceivedDateTime, DocumentType, GRNNumber, GRNDate, PONumber,
+                                    SupplierId, CustomerId, BankId, IsActive, IsProcessed
+                                )
+                                OUTPUT INSERTED.GRNId INTO @NewRows(GRNId)
+                                VALUES (
+                                    @FileName, @Org, @ReceivedDateTime, @DocumentType, @GRNNumber, @GRNDate, @PONumber,
+                                    @SupplierId, @CustomerId, @BankId, 1, 0
+                                );
+
+                                SELECT TOP (1) GRNId FROM @NewRows;
+                                ";
             using (SqlCommand cmd = new SqlCommand(insert, conn, tran))
             {
                 cmd.Parameters.AddWithValue("@FileName", grn.FileName ?? (object)DBNull.Value);
