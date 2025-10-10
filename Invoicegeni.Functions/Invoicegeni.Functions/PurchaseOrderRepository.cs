@@ -126,9 +126,9 @@ namespace Invoicegeni.Functions
             if (existingId.HasValue) return existingId.Value;
 
             const string insertSql = @"INSERT INTO PurchaseOrderInfo 
-                                       (FileName, Org, ReceivedDateTime, DocumentType, SupplierId, CustomerId, BankId, PONo, PODate, DeliveryDate, InvoiceNumber, PaymentTerms, POVATValue, TotalPOValue, SubTotalPOValue, Isprocessed)
+                                       (FileName, Org, ReceivedDateTime, DocumentType, SupplierId, CustomerId, BankId, PONo, PODate, DeliveryDate, InvoiceNumber, PaymentTerms, POVATValue, TotalPOValue, SubTotalPOValue, Isprocessed, MatchStatus)
                                        OUTPUT INSERTED.PurchaseOrderId
-                                       VALUES (@FileName, @Org, @ReceivedDateTime, @DocumentType, @SupplierId, @CustomerId, @BankId, @PONo, @PODate, @DeliveryDate, @InvoiceNumber, @PaymentTerms, @POVATValue, @TotalPOValue, @SubTotalPOValue, 0)";
+                                       VALUES (@FileName, @Org, @ReceivedDateTime, @DocumentType, @SupplierId, @CustomerId, @BankId, @PONo, @PODate, @DeliveryDate, @InvoiceNumber, @PaymentTerms, @POVATValue, @TotalPOValue, @SubTotalPOValue, 0, @MatchStatus)";
 
             using var cmd = new SqlCommand(insertSql, conn, tx);
             cmd.Parameters.AddWithValue("@FileName", po.FileName ?? "");
@@ -146,6 +146,7 @@ namespace Invoicegeni.Functions
             cmd.Parameters.AddWithValue("@POVATValue", po.POVATValue);
             cmd.Parameters.AddWithValue("@TotalPOValue", po.TotalPOValue);
             cmd.Parameters.AddWithValue("@SubTotalPOValue", po.SubTotalPOValue);
+            cmd.Parameters.AddWithValue("@MatchStatus", "Pending");
             return (int)cmd.ExecuteScalar();
         }
 

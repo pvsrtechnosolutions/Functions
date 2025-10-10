@@ -13,6 +13,7 @@
   <ItemGroup>
     <!-- Removed FrameworkReference that doesn't apply to isolated model -->
     <PackageReference Include="Azure.AI.DocumentIntelligence" Version="1.0.0" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
     <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.23.0" />
     
     <!-- Azure Functions Isolated Worker Packages -->
