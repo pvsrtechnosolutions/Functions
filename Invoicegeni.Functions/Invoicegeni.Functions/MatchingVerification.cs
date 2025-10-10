@@ -15,124 +15,124 @@ public class MatchingVerification
         _logger = loggerFactory.CreateLogger<MatchingVerification>();
     }
 
-    //[Function("MatchingVerification")]
-    //public async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer)
-    //{
-    //    _logger.LogInformation($"MatchPOInvoiceGRNFunction started at: {DateTime.Now}");
+    [Function("MatchingVerification")]
+    public async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer)
+    {
+        _logger.LogInformation($"MatchPOInvoiceGRNFunction started at: {DateTime.Now}");
 
-    //    string connectionString = Environment.GetEnvironmentVariable("SqlConnectionString");
-    //    if (string.IsNullOrWhiteSpace(connectionString))
-    //    {
-    //        _logger.LogError("Missing connection string.");
-    //        return;
-    //    }
+        string connectionString = Environment.GetEnvironmentVariable("SqlConnectionString");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            _logger.LogError("Missing connection string.");
+            return;
+        }
 
-    //    using var conn = new SqlConnection(connectionString);
-    //    await conn.OpenAsync();
+        using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync();
 
-    //    // 1️⃣ Fetch all purchase orders pending or partially matched
-    //    var pos = await conn.QueryAsync<dynamic>(
-    //        @"SELECT * FROM PurchaseOrderInfo 
-    //              WHERE ISNULL(MatchStatus, 'Pending') IN ('Pending', 'PartiallyMatched')");
+        // 1️⃣ Fetch all purchase orders pending or partially matched
+        var pos = await conn.QueryAsync<dynamic>(
+            @"SELECT * FROM PurchaseOrderInfo 
+                  WHERE ISNULL(MatchStatus, 'Pending') IN ('Pending', 'PartiallyMatched')");
 
-    //    foreach (var po in pos)
-    //    {
-    //        var poLines = await conn.QueryAsync<dynamic>(
-    //            "SELECT * FROM PurchaseOrderInfoLineItem WHERE PurchaseOrderId = @poid",
-    //            new { poid = po.PurchaseOrderId });
+        foreach (var po in pos)
+        {
+            var poLines = await conn.QueryAsync<dynamic>(
+                "SELECT * FROM PurchaseOrderInfoLineItem WHERE PurchaseOrderId = @poid",
+                new { poid = po.PurchaseOrderId });
 
-    //        bool anyPending = false, anyException = false;
+            bool anyPending = false, anyException = false;
 
-    //        foreach (var poLine in poLines)
-    //        {
-    //            string itemCode = poLine.ItemCode;
-    //            decimal poQty = poLine.QuantityOrdered;
-    //            decimal poPrice = poLine.UnitPrice;
+            foreach (var poLine in poLines)
+            {
+                string itemCode = poLine.ItemCode;
+                decimal poQty = poLine.QuantityOrdered;
+                decimal poPrice = poLine.UnitPrice;
 
-    //            // Get all invoice lines related to this PO and ItemCode
-    //            var invLines = await conn.QueryAsync<dynamic>(
-    //                @"SELECT il.* 
-    //                      FROM InvoiceLineItem il 
-    //                      JOIN Invoice i ON il.InvoiceId = i.InvoiceId
-    //                      WHERE i.PONumber = @poNum AND il.ItemCode = @itemCode",
-    //                new { poNum = po.PONo, itemCode });
+                // Get all invoice lines related to this PO and ItemCode
+                var invLines = await conn.QueryAsync<dynamic>(
+                    @"SELECT il.* 
+                          FROM InvoiceLineItem il 
+                          JOIN Invoice i ON il.InvoiceId = i.InvoiceId
+                          WHERE i.PONumber = @poNum AND il.ItemCode = @itemCode",
+                    new { poNum = po.PONo, itemCode });
 
-    //            // Get all GRN lines related to this PO and ItemCode
-    //            var grnLines = await conn.QueryAsync<dynamic>(
-    //                @"SELECT gl.* 
-    //                      FROM GRNLineItem gl 
-    //                      JOIN GRNData g ON gl.GRNId = g.GRNId
-    //                      WHERE g.PONumber = @poNum AND gl.ItemCode = @itemCode",
-    //                new { poNum = po.PONo, itemCode });
+                // Get all GRN lines related to this PO and ItemCode
+                var grnLines = await conn.QueryAsync<dynamic>(
+                    @"SELECT gl.* 
+                          FROM GRNLineItem gl 
+                          JOIN GRNData g ON gl.GRNId = g.GRNId
+                          WHERE g.PONumber = @poNum AND gl.ItemCode = @itemCode",
+                    new { poNum = po.PONo, itemCode });
 
-    //            if (!invLines.Any() || !grnLines.Any())
-    //            {
-    //                await UpdateLineStatus(conn, poLine.LineItemId, "Pending", "Invoice/GRN not yet received");
-    //                anyPending = true;
-    //                continue;
-    //            }
+                if (!invLines.Any() || !grnLines.Any())
+                {
+                    await UpdateLineStatus(conn, poLine.LineItemId, "Pending", "Invoice/GRN not yet received");
+                    anyPending = true;
+                    continue;
+                }
 
-    //            // Sum quantities and calculate average price for invoice
-    //            decimal invQty = invLines.Sum(x => (decimal)x.Quantity);
-    //            decimal grnQty = grnLines.Sum(x => (decimal)(x.QuantityReceived ?? 0));
-    //            decimal invPrice = invLines.Average(x => (decimal)x.UnitPrice);
+                // Sum quantities and calculate average price for invoice
+                decimal invQty = invLines.Sum(x => (decimal)x.Quantity);
+                decimal grnQty = grnLines.Sum(x => (decimal)(x.QuantityReceived ?? 0));
+                decimal invPrice = invLines.Average(x => (decimal)x.UnitPrice);
 
-    //            // Apply tolerance
-    //            bool qtyOk = Math.Abs(poQty - invQty) <= (poQty * 0.05M); // 5% variance
-    //            bool priceOk = Math.Abs(poPrice - invPrice) <= 10M;       // ₹10 or $10 tolerance
+                // Apply tolerance
+                bool qtyOk = Math.Abs(poQty - invQty) <= (poQty * 0.05M); // 5% variance
+                bool priceOk = Math.Abs(poPrice - invPrice) <= 10M;       // ₹10 or $10 tolerance
 
-    //            if (qtyOk && priceOk)
-    //            {
-    //                await UpdateLineStatus(conn, poLine.LineItemId, "Matched", null);
+                if (qtyOk && priceOk)
+                {
+                    await UpdateLineStatus(conn, poLine.LineItemId, "Matched", null);
 
-    //                // Update linked invoice & GRN lines
-    //                await conn.ExecuteAsync(
-    //                    @"UPDATE InvoiceLineItem SET MatchedStatus = 'Matched' 
-    //                          WHERE ItemCode = @itemCode AND InvoiceId IN (
-    //                            SELECT InvoiceId FROM Invoice WHERE PONumber = @poNum)",
-    //                    new { itemCode, poNum = po.PONo });
+                    // Update linked invoice & GRN lines
+                    await conn.ExecuteAsync(
+                        @"UPDATE InvoiceLineItem SET MatchedStatus = 'Matched' 
+                              WHERE ItemCode = @itemCode AND InvoiceId IN (
+                                SELECT InvoiceId FROM Invoice WHERE PONumber = @poNum)",
+                        new { itemCode, poNum = po.PONo });
 
-    //                await conn.ExecuteAsync(
-    //                    @"UPDATE GRNLineItem SET MatchedStatus = 'Matched' 
-    //                          WHERE ItemCode = @itemCode AND GRNId IN (
-    //                            SELECT GRNId FROM GRNData WHERE PONumber = @poNum)",
-    //                    new { itemCode, poNum = po.PONo });
+                    await conn.ExecuteAsync(
+                        @"UPDATE GRNLineItem SET MatchedStatus = 'Matched' 
+                              WHERE ItemCode = @itemCode AND GRNId IN (
+                                SELECT GRNId FROM GRNData WHERE PONumber = @poNum)",
+                        new { itemCode, poNum = po.PONo });
 
-    //                await UpdateIsProcessedIfAllMatched(conn, invLines.Select(x => (int)x.InvoiceId).Distinct());
-    //                await UpdateIsProcessedIfAllMatchedForGRN(conn, grnLines.Select(x => (int)x.GRNId).Distinct());
-    //            }
-    //            else
-    //            {
-    //                string reason = $"Qty mismatch (PO={poQty}, Inv={invQty}, GRN={grnQty}) or Price mismatch (PO={poPrice}, Inv={invPrice})";
-    //                await UpdateLineStatus(conn, poLine.LineItemId, "Exception", reason);
-    //                anyException = true;
-    //            }
-    //        }
+                    await UpdateIsProcessedIfAllMatched(conn, invLines.Select(x => (int)x.InvoiceId).Distinct());
+                    await UpdateIsProcessedIfAllMatchedForGRN(conn, grnLines.Select(x => (int)x.GRNId).Distinct());
+                }
+                else
+                {
+                    string reason = $"Qty mismatch (PO={poQty}, Inv={invQty}, GRN={grnQty}) or Price mismatch (PO={poPrice}, Inv={invPrice})";
+                    await UpdateLineStatus(conn, poLine.LineItemId, "Exception", reason);
+                    anyException = true;
+                }
+            }
 
-    //        // Update header status based on line statuses
-    //        string matchStatus = "Matched";
-    //        if (anyException)
-    //            matchStatus = "Exception";
-    //        else if (anyPending)
-    //            matchStatus = "PartiallyMatched";
+            // Update header status based on line statuses
+            string matchStatus = "Matched";
+            if (anyException)
+                matchStatus = "Exception";
+            else if (anyPending)
+                matchStatus = "PartiallyMatched";
 
-    //        // Update PO header status and processed flag
-    //        int isProcessed = (matchStatus == "Matched") ? 1 : 0;
+            // Update PO header status and processed flag
+            int isProcessed = (matchStatus == "Matched") ? 1 : 0;
 
-    //        await conn.ExecuteAsync(
-    //            @"UPDATE PurchaseOrderInfo 
-    //              SET MatchStatus = @status, 
-    //                  IsProcessed = @isProcessed 
-    //              WHERE PurchaseOrderId = @id",
-    //            new { status = matchStatus, isProcessed, id = po.PurchaseOrderId });
+            await conn.ExecuteAsync(
+                @"UPDATE PurchaseOrderInfo 
+                  SET MatchStatus = @status, 
+                      IsProcessed = @isProcessed 
+                  WHERE PurchaseOrderId = @id",
+                new { status = matchStatus, isProcessed, id = po.PurchaseOrderId });
 
-    //        _logger.LogInformation($"PO {po.PONo} marked as {matchStatus}, IsProcessed={isProcessed}");
-    //    }
+            _logger.LogInformation($"PO {po.PONo} marked as {matchStatus}, IsProcessed={isProcessed}");
+        }
 
-    //    _logger.LogInformation($"MatchPOInvoiceGRNFunction completed at: {DateTime.Now}");
+        _logger.LogInformation($"MatchPOInvoiceGRNFunction completed at: {DateTime.Now}");
 
 
-    //}
+    }
 
     private static async Task UpdateLineStatus(SqlConnection conn, int lineItemId, string status, string reason)
     {
