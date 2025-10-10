@@ -159,7 +159,7 @@ public class MatchingVerification
             if (total > 0 && total == matched)
             {
                 await conn.ExecuteAsync(
-                    "UPDATE Invoice SET IsProcessed = 1 WHERE InvoiceId = @id", new { id = invId });
+                    "UPDATE Invoice SET IsProcessed = 1 , IsApproved=1 WHERE InvoiceId = @id", new { id = invId });
             }
         }
     }
