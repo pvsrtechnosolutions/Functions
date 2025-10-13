@@ -1,6 +1,7 @@
 ﻿using Invoicegeni.Functions.models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using System;
 
 namespace Invoicegeni.Functions
 {
@@ -52,11 +53,21 @@ namespace Invoicegeni.Functions
                             }
 
                             tran.Commit();
-                            await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", grn.Org?.Trim().ToLowerInvariant(), _logger);
+                            string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", grn.Org?.Trim().ToLowerInvariant(), _logger);
+
+                            if (!string.IsNullOrEmpty(archiveUri))
+                            {
+                                await BackupProcessor.UpdateArchiveUriAsync(grnId, archiveUri, "grndata", conn, _logger);
+                            }
                         }
                         else
                         {
-                            await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", "duplicate", _logger);
+                            string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", "duplicate", _logger);
+
+                            //if (!string.IsNullOrEmpty(archiveUri))
+                            //{
+                            //    await BackupProcessor.UpdateArchiveUriAsync(grnId, archiveUri, "grndata", conn, _logger);
+                            //}
 
                         }
                     }

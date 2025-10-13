@@ -1,6 +1,7 @@
 ﻿
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
 
@@ -8,7 +9,7 @@ namespace Invoicegeni.Functions
 {
     internal class BackupProcessor
     {
-        internal static async Task ArchiveTheProcessedFile(string name, string fileType, string vendorName, ILogger log)
+        internal static async Task<string> ArchiveTheProcessedFile(string name, string fileType, string vendorName, ILogger log)
         {
             try
             {
@@ -54,17 +55,59 @@ namespace Invoicegeni.Functions
                 if (properties.CopyStatus == CopyStatus.Success)
                 {
                     await sourceBlob.DeleteAsync();
-                    log.LogInformation($"Archived blob '{name}' to '{destinationBlobPath}' successfully.");
+                    string blobUri = destinationBlob.Uri.ToString();
+                    log.LogInformation($"Archived blob '{name}' to '{blobUri}' successfully.");
+                    return blobUri;
                 }
                 else
                 {
                     log.LogWarning($"Copy failed for blob '{name}'. Status: {properties.CopyStatus}");
+                    return null;
                 }
             }
             catch (Exception moveEx)
             {
                 log.LogError($"Failed to archive blob '{name}' to structured folder: {moveEx}");
+                return null;
             }
         }
+
+
+        internal static async Task UpdateArchiveUriAsync(int recordId, string archiveUri, string fileType, SqlConnection conn, ILogger logger)
+        {
+            try
+            {
+                // Map fileType to actual table name
+                string tableName = fileType.ToLowerInvariant() switch
+                {
+                    "invoice" => "Invoice",
+                    "grndata" => "GRN",
+                    "purchaseorder" => "PurchaseOrder",
+                    _ => throw new ArgumentException($"Unsupported file type: {fileType}")
+                };
+
+                // Common assumption: the primary key column is the same as table name + "Id"
+                string idColumn = $"{tableName}Id";
+
+                string sql = $"UPDATE {tableName} SET ArchiveFileUri = @ArchiveUri WHERE {idColumn} = @Id";
+
+                using (SqlCommand cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@ArchiveUri", archiveUri);
+                    cmd.Parameters.AddWithValue("@Id", recordId);
+
+                    int rows = await cmd.ExecuteNonQueryAsync();
+                    if (rows > 0)
+                        logger.LogInformation($"Updated {tableName} ({recordId}) with archive URI.");
+                    else
+                        logger.LogWarning($"No record found in {tableName} for ID {recordId}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, $"Failed to update archive URI for {fileType} ID {recordId}");
+            }
+        }
+
     }
 }

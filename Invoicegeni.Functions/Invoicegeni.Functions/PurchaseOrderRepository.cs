@@ -48,7 +48,11 @@ namespace Invoicegeni.Functions
                     }
 
                     tx.Commit();
-                    await BackupProcessor.ArchiveTheProcessedFile(po.FileName, "purchaseorder", po.Org?.Trim().ToLowerInvariant(), _logger);
+                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(po.FileName, "purchaseorder", po.Org?.Trim().ToLowerInvariant(), _logger);
+                    if (!string.IsNullOrEmpty(archiveUri))
+                    {
+                        await BackupProcessor.UpdateArchiveUriAsync(poId, archiveUri, "purchaseorder", conn, _logger);
+                    }
                 }
                 else
                 {
