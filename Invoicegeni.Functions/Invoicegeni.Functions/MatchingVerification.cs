@@ -145,7 +145,26 @@ public class MatchingVerification
                 }
                 else
                 {
-                    string reason = $"Qty mismatch (PO={poQty}, Inv={invQty}, GRN={(is3Way ? grnQty : 0)}) or Price mismatch (PO={poPrice}, Inv={invPrice})";
+                    //string reason = $"Qty mismatch (PO={poQty}, Inv={invQty}, GRN={(is3Way ? grnQty : 0)}) or Price mismatch (PO={poPrice}, Inv={invPrice})";
+                    //await UpdateLineStatus(conn, poLine.LineItemId, "Exception", reason);
+                    //anyException = true;
+                    string reason;
+
+                    if (!qtyOk && !priceOk)
+                    {
+                        reason = $"Quantity and Price mismatch (PO Qty={poQty}, Inv Qty={invQty}, GRN Qty={(is3Way ? grnQty : 0)}, " +
+                                 $"PO Total={poPrice}, Inv Total={invPrice})";
+                    }
+                    else if (!qtyOk)
+                    {
+                        reason = $"Quantity mismatch (PO Qty={poQty}, Inv Qty={invQty}" +
+                                 $"{(is3Way ? $", GRN Qty={grnQty}" : string.Empty)})";
+                    }
+                    else // only price mismatch
+                    {
+                        reason = $"Price mismatch (PO Total={poPrice}, Inv Total={invPrice})";
+                    }
+
                     await UpdateLineStatus(conn, poLine.LineItemId, "Exception", reason);
                     anyException = true;
                 }
