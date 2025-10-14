@@ -78,16 +78,22 @@ namespace Invoicegeni.Functions
             try
             {
                 // Map fileType to actual table name
-                string tableName = fileType.ToLowerInvariant() switch
+                string tableColumnName = fileType.ToLowerInvariant() switch
                 {
                     "invoice" => "Invoice",
                     "grndata" => "GRN",
                     "purchaseorder" => "PurchaseOrder",
                     _ => throw new ArgumentException($"Unsupported file type: {fileType}")
                 };
-
+                string tableName = fileType.ToLowerInvariant() switch
+                {
+                    "invoice" => "Invoice",
+                    "grndata" => "GRNData",
+                    "purchaseorder" => "PurchaseOrderInfo",
+                    _ => throw new ArgumentException($"Unsupported file type: {fileType}")
+                };
                 // Common assumption: the primary key column is the same as table name + "Id"
-                string idColumn = $"{tableName}Id";
+                string idColumn = $"{tableColumnName}Id";
 
                 string sql = $"UPDATE {tableName} SET ArchiveFileUri = @ArchiveUri WHERE {idColumn} = @Id";
 

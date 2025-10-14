@@ -49,8 +49,8 @@ public class MatchingVerification
             }
 
             bool is3Way = supplier.Is3WayMatching == true;
-            decimal qtyVariancePct = supplier.QuantityVariance; //== 0 ? 5 : supplier.QuantityVariance; // Default 5%
-            decimal priceVariance = supplier.PriceVariance;// == 0 ? 10 : supplier.PriceVariance;       // Default ₹10 tolerance
+            decimal qtyVariancePct = supplier.Quantity_Variance; //== 0 ? 5 : supplier.QuantityVariance; // Default 5%
+            decimal priceVariance = supplier.Price_Variance;// == 0 ? 10 : supplier.PriceVariance;       // Default ₹10 tolerance
 
             var poLines = await conn.QueryAsync<dynamic>(
                 "SELECT * FROM PurchaseOrderInfoLineItem WHERE PurchaseOrderId = @poid",
@@ -62,7 +62,7 @@ public class MatchingVerification
             {
                 string itemCode = poLine.ItemCode;
                 decimal poQty = poLine.QuantityOrdered;
-                decimal poPrice = poLine.UnitPrice;
+                decimal poPrice = poLine.TotalAmount;
 
                 // Invoice lines
                 var invLines = await conn.QueryAsync<dynamic>(
@@ -95,14 +95,28 @@ public class MatchingVerification
 
                 // Calculate invoice stats
                 decimal invQty = invLines.Sum(x => (decimal)x.Quantity);
-                decimal invPrice = invLines.Average(x => (decimal)x.UnitPrice);
+                decimal invPrice = invLines.Sum(x => (decimal)x.NetAmount);
 
                 // Calculate GRN quantity (for 3-way only)
                 decimal grnQty = is3Way ? grnLines.Sum(x => (decimal)(x.QuantityReceived ?? 0)) : poQty;
 
-                // Apply tolerance
-                bool qtyOk = Math.Abs(poQty - (is3Way ? grnQty : invQty)) <= (poQty * (qtyVariancePct / 100M));
+                bool qtyOk;
                 bool priceOk = Math.Abs(poPrice - invPrice) <= priceVariance;
+
+                if (is3Way)
+                {
+                    // ✅ 3-Way Matching Logic: All three quantities must match within tolerance
+                    bool poVsGrnOk = Math.Abs(poQty - grnQty) <= (poQty * (qtyVariancePct / 100M));
+                    bool grnVsInvOk = Math.Abs(grnQty - invQty) <= (grnQty * (qtyVariancePct / 100M));
+                    bool poVsInvOk = Math.Abs(poQty - invQty) <= (poQty * (qtyVariancePct / 100M));
+
+                    qtyOk = poVsGrnOk && grnVsInvOk && poVsInvOk;
+                }
+                else
+                {
+                    // ✅ 2-Way Matching Logic: PO vs Invoice only
+                    qtyOk = Math.Abs(poQty - invQty) <= (poQty * (qtyVariancePct / 100M));
+                }
 
                 if (qtyOk && priceOk)
                 {
