@@ -124,7 +124,7 @@ public class MatchingVerification
 
                     // Update linked invoice lines
                     await conn.ExecuteAsync(
-                        @"UPDATE InvoiceLineItem SET MatchedStatus = 'Matched' 
+                        @"UPDATE InvoiceLineItem SET MatchedStatus = 'Matched' , UpdatedDate = GETDATE()
                       WHERE ItemCode = @itemCode 
                         AND InvoiceId IN (SELECT InvoiceId FROM Invoice WHERE PONumber = @poNum)",
                         new { itemCode, poNum = po.PONo });
@@ -133,7 +133,7 @@ public class MatchingVerification
                     if (is3Way)
                     {
                         await conn.ExecuteAsync(
-                            @"UPDATE GRNLineItem SET MatchedStatus = 'Matched' 
+                            @"UPDATE GRNLineItem SET MatchedStatus = 'Matched' , UpdatedDate = GETDATE()
                           WHERE ItemCode = @itemCode 
                             AND GRNId IN (SELECT GRNId FROM GRNData WHERE PONumber = @poNum)",
                             new { itemCode, poNum = po.PONo });
@@ -183,7 +183,8 @@ public class MatchingVerification
             await conn.ExecuteAsync(
                 @"UPDATE PurchaseOrderInfo 
               SET MatchStatus = @status, 
-                  IsProcessed = @isProcessed
+                  IsProcessed = @isProcessed ,
+                  UpdatedDate = GETDATE()
               WHERE PurchaseOrderId = @id",
                 new { status = matchStatus, isProcessed, id = po.PurchaseOrderId });
 
@@ -203,7 +204,9 @@ public class MatchingVerification
 
         await conn.ExecuteAsync(
             @"UPDATE PurchaseOrderInfoLineItem
-                  SET LineStatus = @status, ExceptionReason = @reason
+                  SET LineStatus = @status
+                  , ExceptionReason = @reason 
+                  , UpdatedDate = GETDATE()
                   WHERE LineItemId = @id",
             new { status, reason, id = lineItemId });
     }
@@ -219,7 +222,7 @@ public class MatchingVerification
             if (total > 0 && total == matched)
             {
                 await conn.ExecuteAsync(
-                    "UPDATE Invoice SET IsProcessed = 1 , IsApproved=1 WHERE InvoiceId = @id", new { id = invId });
+                    "UPDATE Invoice SET IsProcessed = 1 , IsApproved=1 , UpdatedDate = GETDATE() WHERE InvoiceId = @id", new { id = invId });
             }
         }
     }
@@ -236,46 +239,8 @@ public class MatchingVerification
             if (total > 0 && total == matched)
             {
                 await conn.ExecuteAsync(
-                    "UPDATE GRNData SET IsProcessed = 1 WHERE GRNId = @id", new { id = grnId });
+                    "UPDATE GRNData SET IsProcessed = 1 , UpdatedDate = GETDATE() WHERE GRNId = @id", new { id = grnId });
             }
         }
     }
-    //private static async Task InsertFailureRecord(int invoiceId, string invoiceNo, string itemCode, string reason, string connectionString)
-    //{
-    //    using (SqlConnection conn = new SqlConnection(connectionString))
-    //    {
-    //        await conn.OpenAsync();
-
-    //        string insertSql = @"
-    //        INSERT INTO InvoiceMatchingFailure (InvoiceId, InvoiceNo, ItemCode, Reason, CreatedDate)
-    //        VALUES (@InvoiceId, @InvoiceNo, @ItemCode, @Reason, GETDATE())";
-
-    //        using (SqlCommand cmd = new SqlCommand(insertSql, conn))
-    //        {
-    //            cmd.Parameters.AddWithValue("@InvoiceId", invoiceId);
-    //            cmd.Parameters.AddWithValue("@InvoiceNo", invoiceNo ?? (object)DBNull.Value);
-    //            cmd.Parameters.AddWithValue("@ItemCode", itemCode ?? (object)DBNull.Value);
-    //            cmd.Parameters.AddWithValue("@Reason", reason);
-
-    //            await cmd.ExecuteNonQueryAsync();
-    //        }
-    //    }
-    //}
-
-
-    //private static async Task MarkInvoiceProcessed(int invoiceId, string connectionString, ILogger log)
-    //{
-    //    using (SqlConnection conn = new SqlConnection(connectionString))
-    //    {
-    //        await conn.OpenAsync();
-    //        string updateSql = "UPDATE Invoice SET IsProcessed = 1 WHERE InvoiceId = @InvoiceId";
-    //        using (SqlCommand cmd = new SqlCommand(updateSql, conn))
-    //        {
-    //            cmd.Parameters.AddWithValue("@InvoiceId", invoiceId);
-    //            int rows = await cmd.ExecuteNonQueryAsync();
-    //            log.LogInformation($"Invoice {invoiceId} marked as processed. ({rows} row(s) updated)");
-    //        }
-    //    }
-    //}
-
 }
