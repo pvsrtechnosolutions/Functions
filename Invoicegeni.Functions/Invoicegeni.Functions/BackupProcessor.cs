@@ -32,7 +32,7 @@ namespace Invoicegeni.Functions
                 string destinationFileName = $"{fileNameWithoutExt}_{timestamp}{fileExtension}";
 
                 // Construct destination blob path
-                string destinationBlobPath = $"{safeVendorName}/{dateFolder}/{destinationFileName}";
+                string destinationBlobPath = $"{fileType}/{safeVendorName}/{dateFolder}/{destinationFileName}";
                 //string destinationBlobPath = $"{fileType}/{safeVendorName}/{dateFolder}/{name}";
 
                 // Initialize Blob clients
