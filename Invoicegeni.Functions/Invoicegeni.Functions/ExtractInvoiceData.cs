@@ -170,12 +170,22 @@ public class ExtractInvoiceData
             // Format today's date as ddMMyyyy
             string dateFolder = DateTime.UtcNow.ToString("ddMMyyyy");
 
-            // Optional: Add timestamp to filename to avoid overwriting
-            string timestamp = DateTime.UtcNow.ToString("HHmmss");
-            //string destinationFileName = $"{timestamp}_{name}";
+            // Extract filename and extension separately
+            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(name);
+            string fileExtension = Path.GetExtension(name);
 
-            // Construct full destination blob path
-            string destinationBlobPath = $"{safeVendorName}/{dateFolder}/{name}";
+            // Append timestamp to filename to avoid overwrite on same day
+            string timestamp = DateTime.UtcNow.ToString("HHmmssfff");
+            string destinationFileName = $"{fileNameWithoutExt}_{timestamp}{fileExtension}";
+            // Construct destination blob path
+            string destinationBlobPath = $"{safeVendorName}/{dateFolder}/{destinationFileName}";
+
+            //// Optional: Add timestamp to filename to avoid overwriting
+            //string timestamp = DateTime.UtcNow.ToString("HHmmss");
+            ////string destinationFileName = $"{timestamp}_{name}";
+
+            //// Construct full destination blob path
+            //string destinationBlobPath = $"{safeVendorName}/{dateFolder}/{name}";
 
             // Initialize Blob clients
             BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
