@@ -23,12 +23,17 @@ namespace Invoicegeni.Functions
                 // Format today's date as ddMMyyyy
                 string dateFolder = DateTime.UtcNow.ToString("ddMMyyyy");
 
+                // Extract filename and extension separately
+                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(name);
+                string fileExtension = Path.GetExtension(name);
+
                 // Optional: Add timestamp to filename to avoid overwriting
                 string timestamp = DateTime.UtcNow.ToString("HHmmss");
-                //string destinationFileName = $"{timestamp}_{name}";
+                string destinationFileName = $"{fileNameWithoutExt}_{timestamp}{fileExtension}";
 
-                // Construct full destination blob path
-                string destinationBlobPath = $"{fileType}/{safeVendorName}/{dateFolder}/{name}";
+                // Construct destination blob path
+                string destinationBlobPath = $"{safeVendorName}/{dateFolder}/{destinationFileName}";
+                //string destinationBlobPath = $"{fileType}/{safeVendorName}/{dateFolder}/{name}";
 
                 // Initialize Blob clients
                 BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
