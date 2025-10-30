@@ -38,14 +38,15 @@ public class PurchaseOrderProcessor
                     return;
                 }
 
-                var credential = new AzureKeyCredential(apiKey);
-                var client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
-                BinaryData content = BinaryData.FromStream(stream);
-                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
-                var result = operation.Value;
+                
                 //var doc = result.Documents[0];
                 if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                 {
+                    var credential = new AzureKeyCredential(apiKey);
+                    var client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
+                    BinaryData content = BinaryData.FromStream(stream);
+                    var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
+                    var result = operation.Value;
                     var firstPage = result.Pages.FirstOrDefault();
                     string documentTitle = null;
                     if (firstPage != null && firstPage.Lines.Count > 0)
