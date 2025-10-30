@@ -24,7 +24,7 @@ namespace Invoicegeni.Functions
 
             try
             {
-                int? poIdExist = GetPurchaseOrderId(conn, tx, po.PONumber, po.Org);
+                int? poIdExist = GetPurchaseOrderId(conn, tx, po.Org, po.PONumber);
                 if (!poIdExist.HasValue)
                 {
                     // 1. Supplier
@@ -56,8 +56,9 @@ namespace Invoicegeni.Functions
                 }
                 else
                 {
-                    await BackupProcessor.ArchiveTheProcessedFile(po.FileName, "purchaseorder", "duplicate", _logger);
-
+                    //await BackupProcessor.ArchiveTheProcessedFile(po.FileName, "purchaseorder", "duplicate", _logger);
+                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(po.FileName, "purchaseorder", "duplicate", _logger);
+                    await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), po.FileName, "purchaseorder", "duplicate", archiveUri, _logger);
                 }
                 _logger.LogInformation($"Purchase order {po.PONumber} inserted successfully.");
             }

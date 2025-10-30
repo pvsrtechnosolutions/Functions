@@ -46,10 +46,75 @@ public class PurchaseOrderProcessor
                 //var doc = result.Documents[0];
                 if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                 {
-                    PurchaseOrderInfo purchaseOrder = PurchaseOrderMapper.ExtractDataAndAssigntoPurchaseOrderInfo(result, name);
-                    var repo = new PurchaseOrderRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), _logger);
-                    await repo.InsertPO(purchaseOrder, _logger);
-                    _logger.LogInformation($"Blob {name} processed successfully.");
+                    var firstPage = result.Pages.FirstOrDefault();
+                    string documentTitle = null;
+                    if (firstPage != null && firstPage.Lines.Count > 0)
+                    {
+                        // Get approximate page height
+                        var allY = firstPage.Lines
+                            .SelectMany(l => new float[] { l.Polygon[1], l.Polygon[3], l.Polygon[5], l.Polygon[7] })
+                            .ToList();
+                        var maxY = allY.Max();
+
+                        // Consider only lines near the top 25% of the page
+                        var topRegionThreshold = maxY * 0.25f;
+
+                        var topLines = firstPage.Lines
+                            .Where(l =>
+                            {
+                                var ys = new float[] { l.Polygon[1], l.Polygon[3], l.Polygon[5], l.Polygon[7] };
+                                return ys.Min() <= topRegionThreshold;
+                            })
+                            .ToList();
+
+                        // Normalize title text for comparison
+                        string[] validTitles = new[]
+                        {
+                            "INVOICE",
+                            "PURCHASE ORDER",
+                            "GOODS RECEIPT NOTE"
+                        };
+
+                        // Try to find exact match (case-insensitive)
+                        var possibleTitle = topLines
+                            .FirstOrDefault(l => validTitles
+                                .Any(t => string.Equals(l.Content.Trim(), t, StringComparison.OrdinalIgnoreCase)));
+
+                        // Fallback to topmost line if no title matched
+                        if (possibleTitle != null)
+                        {
+                            documentTitle = possibleTitle.Content.Trim();
+                        }
+                        else
+                        {
+                            var topLine = topLines
+                                .OrderBy(l =>
+                                {
+                                    var ys = new float[] { l.Polygon[1], l.Polygon[3], l.Polygon[5], l.Polygon[7] };
+                                    return ys.Min();
+                                })
+                                .FirstOrDefault();
+
+                            documentTitle = topLine?.Content.Trim();
+                        }
+                    }
+                    if (documentTitle.ToLower().ToString() == "purchase order")
+                    {
+                        PurchaseOrderInfo purchaseOrder = PurchaseOrderMapper.ExtractDataAndAssigntoPurchaseOrderInfo(result, name);
+                        var repo = new PurchaseOrderRepository(Environment.GetEnvironmentVariable("SqlConnectionString"), _logger);
+                        await repo.InsertPO(purchaseOrder, _logger);
+                        _logger.LogInformation($"Blob {name} processed successfully.");
+                    }
+                    else
+                    {
+                        string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "purchase order", "InvalidFile", _logger);
+                        await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "purchase order", "InvalidFileType", archiveUri, _logger);
+                    }
+                }
+                else
+                {
+                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "purchase order", "InvalidFile", _logger);
+                    await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "purchase order", "InvalidFileFormat", archiveUri, _logger);
                 }
                 // Mark as processed
                 processed = true;

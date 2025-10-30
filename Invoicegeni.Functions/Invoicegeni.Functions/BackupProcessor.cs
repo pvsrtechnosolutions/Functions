@@ -1,6 +1,7 @@
 ﻿
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
@@ -75,8 +76,42 @@ namespace Invoicegeni.Functions
                 log.LogError($"Failed to archive blob '{name}' to structured folder: {moveEx}");
                 return null;
             }
-        }
+        }       
+        internal static async Task InsertInvalidOrDuplicateFile(
+        string connectionString,
+        string documentName,
+        string documentType,
+        string documentStatus,
+        string archiveUri,
+        ILogger log)
+        {
+            try
+            {
+                const string query = @"
+                INSERT INTO ExceptionDocuments 
+                    (DocumentName, DocumentType, DocumentStatus, ArchiveUri, CreatedDate)
+                VALUES 
+                    (@DocumentName, @DocumentType, @DocumentStatus, @ArchiveUri, GETDATE());";
 
+                using (var connection = new SqlConnection(connectionString))
+                {
+                    await connection.ExecuteAsync(query, new
+                    {
+                        DocumentName = documentName,
+                        DocumentType = documentType,
+                        DocumentStatus = documentStatus,
+                        ArchiveUri = archiveUri
+                    });
+                }
+
+                log.LogInformation($"Inserted document record: {documentName} ({documentStatus})");
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, $"Error inserting document record for {documentName}");
+                throw;
+            }
+        }
 
         internal static async Task UpdateArchiveUriAsync(int recordId, string archiveUri, string fileType, SqlConnection conn, ILogger logger)
         {

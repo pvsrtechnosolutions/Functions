@@ -54,8 +54,9 @@ namespace Invoicegeni.Functions
                 }
                 else
                 {
-                    string archiveUri =  await BackupProcessor.ArchiveTheProcessedFile(invoice.FileName, "invoice", "duplicate", log);
-
+                    //string archiveUri =  await BackupProcessor.ArchiveTheProcessedFile(invoice.FileName, "invoice", "duplicate", log);
+                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(invoice.FileName, "invoice", "duplicate", log);
+                    await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), invoice.FileName, "invoice", "duplicate", archiveUri, log);
                 }
             }
             catch

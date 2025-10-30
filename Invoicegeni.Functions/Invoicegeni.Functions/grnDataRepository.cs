@@ -28,7 +28,7 @@ namespace Invoicegeni.Functions
                     {
 
 
-                        int? grndExist = GetGRNDataId(conn, tran, grn.GRNNumber, grn.Org);
+                        int? grndExist = GetGRNDataId(conn, tran, grn.Org, grn.GRNNumber);
                         if (!grndExist.HasValue)
                         {
                             // 1. Supplier
@@ -62,8 +62,9 @@ namespace Invoicegeni.Functions
                         }
                         else
                         {
+                            //string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", "duplicate", _logger);
                             string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", "duplicate", _logger);
-
+                            await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), grn.FileName, "invoice", "duplicate", archiveUri, _logger);
                             //if (!string.IsNullOrEmpty(archiveUri))
                             //{
                             //    await BackupProcessor.UpdateArchiveUriAsync(grnId, archiveUri, "grndata", conn, _logger);
