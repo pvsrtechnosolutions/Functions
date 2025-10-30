@@ -81,31 +81,62 @@ namespace Invoicegeni.Functions
             }
         }
 
-        private async Task<int> GetOrInsertSupplierAsync(SqlConnection conn, SqlTransaction tran, SupplierInfo supplier)
+        //private async Task<int> GetOrInsertSupplierAsync(SqlConnection conn, SqlTransaction tran, SupplierInfo supplier)
+        //{
+        //    string query = "SELECT SupplierId FROM Supplier WHERE Name = @Name";
+        //    using (SqlCommand cmd = new SqlCommand(query, conn, tran))
+        //    {
+        //        cmd.Parameters.AddWithValue("@Name", supplier.Name ?? (object)DBNull.Value);
+        //        var result = await cmd.ExecuteScalarAsync();
+        //        if (result != null) return (int)result;
+        //    }
+
+        //    string insert = @"INSERT INTO Supplier (Name, Address, Phone, Email, Website, GSTINORVAT, IsActive)
+        //                  OUTPUT INSERTED.SupplierId
+        //                  VALUES (@Name, @Address, @Phone, @Email, @Website, @GSTINORVAT, 1)";
+        //    using (SqlCommand cmd = new SqlCommand(insert, conn, tran))
+        //    {
+        //        cmd.Parameters.AddWithValue("@Name", supplier.Name ?? (object)DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@Address", supplier.Address ?? (object)DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@Phone", supplier.Phone ?? (object)DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@Email", supplier.Email ?? (object)DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@Website", supplier.Website ?? (object)DBNull.Value);
+        //        cmd.Parameters.AddWithValue("@GSTINORVAT", supplier.GSTIN ?? (object)DBNull.Value);
+        //        return (int)await cmd.ExecuteScalarAsync();
+        //    }
+        //}
+
+        private int GetOrInsertSupplier(SqlConnection conn, SqlTransaction tx, SupplierInfo supplier)
         {
-            string query = "SELECT SupplierId FROM Supplier WHERE Name = @Name";
-            using (SqlCommand cmd = new SqlCommand(query, conn, tran))
+            string sql = "SELECT SupplierId FROM Supplier WHERE Name = @Name";
+            using (var cmd = new SqlCommand(sql, conn, tx))
             {
-                cmd.Parameters.AddWithValue("@Name", supplier.Name ?? (object)DBNull.Value);
-                var result = await cmd.ExecuteScalarAsync();
+                cmd.Parameters.AddWithValue("@Name", supplier.Name);
+                var result = cmd.ExecuteScalar();
                 if (result != null) return (int)result;
             }
 
-            string insert = @"INSERT INTO Supplier (Name, Address, Phone, Email, Website, GSTINORVAT, IsActive)
-                          OUTPUT INSERTED.SupplierId
-                          VALUES (@Name, @Address, @Phone, @Email, @Website, @GSTINORVAT, 1)";
-            using (SqlCommand cmd = new SqlCommand(insert, conn, tran))
+            // Declare a table variable to capture the inserted ID
+            string insertSql = @"
+                DECLARE @Inserted TABLE (SupplierId INT);
+                INSERT INTO Supplier (Name, Address, Phone, Email, Website, GSTINORVAT, Isactive, CompanyNumber)
+                OUTPUT INSERTED.SupplierId INTO @Inserted
+                VALUES (@Name, @Address, @Phone, @Email, @Website, @GSTINORVAT, 1, @CompanyNumber);
+                SELECT SupplierId FROM @Inserted;";
+
+            using (var cmd = new SqlCommand(insertSql, conn, tx))
             {
-                cmd.Parameters.AddWithValue("@Name", supplier.Name ?? (object)DBNull.Value);
-                cmd.Parameters.AddWithValue("@Address", supplier.Address ?? (object)DBNull.Value);
-                cmd.Parameters.AddWithValue("@Phone", supplier.Phone ?? (object)DBNull.Value);
-                cmd.Parameters.AddWithValue("@Email", supplier.Email ?? (object)DBNull.Value);
-                cmd.Parameters.AddWithValue("@Website", supplier.Website ?? (object)DBNull.Value);
-                cmd.Parameters.AddWithValue("@GSTINORVAT", supplier.GSTIN ?? (object)DBNull.Value);
-                return (int)await cmd.ExecuteScalarAsync();
+                cmd.Parameters.AddWithValue("@Name", supplier.Name);
+                cmd.Parameters.AddWithValue("@Address", (object?)supplier.Address ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Phone", (object?)supplier.Phone ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Email", (object?)supplier.Email ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Website", (object?)supplier.Website ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@GSTINORVAT", (object?)supplier.GSTIN ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@CompanyNumber", (object?)supplier.CompanyNumber ?? DBNull.Value);
+
+                return (int)cmd.ExecuteScalar();
             }
         }
-
         private async Task<int> GetOrInsertCustomerAsync(SqlConnection conn, SqlTransaction tran, CustomerInfo customer)
         {
             string query = "SELECT CustomerId FROM Customer WHERE Name = @Name";
