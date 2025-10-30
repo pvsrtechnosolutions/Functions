@@ -48,13 +48,13 @@ public class GRNDataProcessor
                 var client = new DocumentIntelligenceClient(new Uri(endpoint), credential);
 
                 _logger.LogInformation("Calling Document Intelligence API at: {Endpoint}", endpoint);
-
-                BinaryData content = BinaryData.FromStream(stream);
-                var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
-                var result = operation.Value;
-
                 if (name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                 {
+                    BinaryData content = BinaryData.FromStream(stream);
+                    var operation = await client.AnalyzeDocumentAsync(WaitUntil.Completed, "prebuilt-layout", content);
+                    var result = operation.Value;
+
+
                     _logger.LogInformation("PDF detected. Extracting GRN data for blob: {BlobName}", name);
 
                     var firstPage = result.Pages.FirstOrDefault();
@@ -147,14 +147,14 @@ public class GRNDataProcessor
                     }
                     else
                     {
-                        string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "goods receipt note", "InvalidFile", _logger);
-                        await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "goods receipt note", "InvalidFileType", archiveUri, _logger);
+                        string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "grndata", "InvalidFile", _logger);
+                        await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "grndata", "InvalidFileType", archiveUri, _logger);
                     }
                 }
                 else
                 {
-                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "goods receipt note", "InvalidFile", _logger);
-                    await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "goods receipt note", "InvalidFileFormat", archiveUri, _logger);
+                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "grndata", "InvalidFile", _logger);
+                    await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "grndata", "InvalidFileFormat", archiveUri, _logger);
                 }
                 _logger.LogInformation("Blob {BlobName} processed successfully on attempt {Attempt}", name, attempt);
 

@@ -107,13 +107,13 @@ public class PurchaseOrderProcessor
                     }
                     else
                     {
-                        string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "purchase order", "InvalidFile", _logger);
+                        string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "purchaseorder", "InvalidFile", _logger);
                         await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "purchase order", "InvalidFileType", archiveUri, _logger);
                     }
                 }
                 else
                 {
-                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "purchase order", "InvalidFile", _logger);
+                    string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(name, "purchaseorder", "InvalidFile", _logger);
                     await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), name, "purchase order", "InvalidFileFormat", archiveUri, _logger);
                 }
                 // Mark as processed

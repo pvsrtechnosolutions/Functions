@@ -64,7 +64,7 @@ namespace Invoicegeni.Functions
                         {
                             //string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", "duplicate", _logger);
                             string archiveUri = await BackupProcessor.ArchiveTheProcessedFile(grn.FileName, "grndata", "duplicate", _logger);
-                            await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), grn.FileName, "invoice", "duplicate", archiveUri, _logger);
+                            await BackupProcessor.InsertInvalidOrDuplicateFile(Environment.GetEnvironmentVariable("SqlConnectionString"), grn.FileName, "grndata", "duplicate", archiveUri, _logger);
                             //if (!string.IsNullOrEmpty(archiveUri))
                             //{
                             //    await BackupProcessor.UpdateArchiveUriAsync(grnId, archiveUri, "grndata", conn, _logger);
