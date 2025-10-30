@@ -32,7 +32,7 @@ namespace Invoicegeni.Functions
                         if (!grndExist.HasValue)
                         {
                             // 1. Supplier
-                            int supplierId = await GetOrInsertSupplierAsync(conn, tran, grn.Supplier);
+                            int supplierId = await GetOrInsertSupplier(conn, tran, grn.Supplier);
 
                             // 2. Customer
                             int customerId = await GetOrInsertCustomerAsync(conn, tran, grn.Customer);
@@ -106,7 +106,7 @@ namespace Invoicegeni.Functions
         //    }
         //}
 
-        private int GetOrInsertSupplier(SqlConnection conn, SqlTransaction tx, SupplierInfo supplier)
+        private async Task<int> GetOrInsertSupplier(SqlConnection conn, SqlTransaction tx, SupplierInfo supplier)
         {
             string sql = "SELECT SupplierId FROM Supplier WHERE Name = @Name";
             using (var cmd = new SqlCommand(sql, conn, tx))
@@ -134,7 +134,7 @@ namespace Invoicegeni.Functions
                 cmd.Parameters.AddWithValue("@GSTINORVAT", (object?)supplier.GSTIN ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@CompanyNumber", (object?)supplier.CompanyNumber ?? DBNull.Value);
 
-                return (int)cmd.ExecuteScalar();
+                return (int)await cmd.ExecuteScalarAsync();
             }
         }
         private async Task<int> GetOrInsertCustomerAsync(SqlConnection conn, SqlTransaction tran, CustomerInfo customer)
